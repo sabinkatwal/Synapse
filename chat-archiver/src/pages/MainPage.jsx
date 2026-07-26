@@ -36,26 +36,48 @@ export default function MainPage() {
     load();
   }, []);
 
-  const handleCapture = async () => {
+  const sendToActiveTab = async (message) => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const result = await chrome.tabs.sendMessage(tab.id, { type: "CAPTURE_CHAT" });
-    if (result?.ok) {
-      const response = await api.getChats();
-      setChats(response || []);
-    } else {
-      setError(result?.error || "Capture failed");
+    if (!tab?.id) {
+      throw new Error("No active tab found.");
+    }
+
+    try {
+      return await chrome.tabs.sendMessage(tab.id, message);
+    } catch (error) {
+      if (error.message?.includes("Receiving end does not exist")) {
+        throw new Error("This tab does not have the Synapse content script loaded. Refresh the page and try again.");
+      }
+      throw error;
+    }
+  };
+
+  const handleCapture = async () => {
+    try {
+      const result = await sendToActiveTab({ type: "CAPTURE_CHAT" });
+      if (result?.ok) {
+        const response = await api.getChats();
+        setChats(response || []);
+      } else {
+        setError(result?.error || "Capture failed");
+      }
+    } catch (err) {
+      setError(err.message || "Capture failed");
     }
   };
 
   const handleInject = async () => {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const result = await chrome.tabs.sendMessage(tab.id, {
-      type: "INJECT_PROMPT",
-      text: promptText,
-      autoSubmit,
-    });
-    if (!result?.ok) {
-      setError(result?.error || "Injection failed");
+    try {
+      const result = await sendToActiveTab({
+        type: "INJECT_PROMPT",
+        text: promptText,
+        autoSubmit,
+      });
+      if (!result?.ok) {
+        setError(result?.error || "Injection failed");
+      }
+    } catch (err) {
+      setError(err.message || "Injection failed");
     }
   };
 
