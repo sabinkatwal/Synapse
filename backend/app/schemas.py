@@ -21,6 +21,10 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
+class TokenResponse(Token):
+    pass
+
+
 class UserResponse(BaseModel):
     id: UUID
     email: EmailStr
