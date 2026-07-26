@@ -2,65 +2,11 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Chat Archiver</title>
+<title>Synapse</title>
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header>
-    <div class="brand">
-      <span class="brand-mark">⌁</span>
-      <h1>Chat Archiver</h1>
-    </div>
-    <div id="siteStatus" class="status">Checking current tab…</div>
-  </header>
-
-  <section>
-    <h2><span class="idx">01</span>Account</h2>
-    <div class="row">
-      <input id="emailInput" type="email" placeholder="Email" />
-      <input id="passwordInput" type="password" placeholder="Password" />
-    </div>
-    <div class="row row-between">
-      <button id="registerBtn">Register</button>
-      <button id="loginBtn">Login</button>
-    </div>
-    <div id="authMsg" class="msg"></div>
-  </section>
-
-  <section>
-    <h2><span class="idx">02</span>Capture</h2>
-    <div class="row">
-      <button id="captureBtn">Capture this conversation</button>
-    </div>
-    <div id="captureMsg" class="msg"></div>
-  </section>
-
-  <section>
-    <h2><span class="idx">03</span>Inject prompt</h2>
-    <textarea id="promptText" placeholder="Type a prompt to send into the active chat…"></textarea>
-    <div class="row row-between">
-      <label class="checkbox">
-        <input type="checkbox" id="autoSubmit" checked />
-        <span class="checkbox-box"></span>
-        Auto-send
-      </label>
-      <button id="injectBtn">Inject</button>
-    </div>
-    <div id="injectMsg" class="msg"></div>
-  </section>
-
-  <section>
-    <h2><span class="idx">04</span>Archived <span class="count-badge" id="chatCount">0</span></h2>
-    <div id="chatList">
-      <div id="emptyState">No captures yet — hit capture above to start your archive.</div>
-    </div>
-  </section>
-
-  <div class="footer-actions">
-    <button class="secondary" id="exportBtn">Export JSON</button>
-    <button class="danger" id="clearBtn">Clear all</button>
-  </div>
-
-  <script src="popup.js"></script>
+  <div id="root"></div>
+  <script src="dist/popup.js"></script>
 </body>
 </html>

@@ -9,7 +9,9 @@ app = FastAPI(title="Synapse API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "chrome-extension://neaficlfbibdhlhkjjakoiijdlfollna",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

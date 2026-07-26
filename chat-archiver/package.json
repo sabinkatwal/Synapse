@@ -1,0 +1,15 @@
+{
+  "name": "synapse-chat-archiver",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build": "esbuild src/index.jsx --bundle --outfile=dist/popup.js --loader:.js=jsx --format=iife --sourcemap"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}
