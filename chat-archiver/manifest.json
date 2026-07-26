@@ -8,7 +8,8 @@
     "https://chatgpt.com/*",
     "https://chat.openai.com/*",
     "https://claude.ai/*",
-    "https://gemini.google.com/*"
+    "https://gemini.google.com/*",
+    "http://127.0.0.1:8000/*"
   ],
   "action": {
     "default_popup": "popup.html",

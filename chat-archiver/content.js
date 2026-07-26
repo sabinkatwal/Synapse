@@ -6,24 +6,29 @@
   const host = location.hostname;
 
   // ---- Per-site config ------------------------------------------------
-  // Selectors change often on these sites. Each config also has a
-  // genericFallback used if the specific selectors find nothing.
   const CONFIGS = {
     "chatgpt.com": {
       site: "chatgpt",
-      turnSelector: '[data-testid^="conversation-turn-"]',
+      // Updated: OpenAI now uses article[data-testid^="conversation-turn-"]
+      // wrapping a div[data-message-author-role]. Keep both old + new as fallback list.
+      turnSelector:
+        'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-author-role]',
       roleOf(turnEl) {
-        const roleEl = turnEl.querySelector("[data-message-author-role]");
+        const roleEl = turnEl.hasAttribute("data-message-author-role")
+          ? turnEl
+          : turnEl.querySelector("[data-message-author-role]");
         return roleEl ? roleEl.getAttribute("data-message-author-role") : "unknown";
       },
       textOf(turnEl) {
-        const roleEl = turnEl.querySelector("[data-message-author-role]");
+        const roleEl = turnEl.hasAttribute("data-message-author-role")
+          ? turnEl
+          : turnEl.querySelector("[data-message-author-role]");
         return (roleEl || turnEl).innerText.trim();
       },
-      inputSelector: "#prompt-textarea",
-      submitSelector: 'button[data-testid="send-button"]',
+      inputSelector: '#prompt-textarea, div[contenteditable="true"]',
+      submitSelector: 'button[data-testid="send-button"], button[aria-label="Send prompt"]',
     },
-    "chat.openai.com": null, // filled below (alias of chatgpt.com)
+    "chat.openai.com": null,
     "claude.ai": {
       site: "claude",
       turnSelector: '[data-testid="user-message"], div.font-claude-message',
@@ -57,8 +62,11 @@
   // ---- Capture ----------------------------------------------------------
   function captureConversation() {
     let turns = Array.from(document.querySelectorAll(config.turnSelector));
-    let messages = [];
 
+    // De-dupe: new ChatGPT selector list can match nested elements twice.
+    turns = turns.filter((el, i) => !turns.slice(0, i).some((prev) => prev.contains(el)));
+
+    let messages = [];
     if (turns.length > 0) {
       messages = turns
         .map((t) => {
@@ -69,10 +77,10 @@
         .filter((m) => m.text && m.text.length > 0);
     }
 
-    // Generic fallback: if specific selectors found nothing, grab the
-    // main scrollable region's text as a single blob so capture never
-    // silently returns empty.
     if (messages.length === 0) {
+      console.warn(
+        `[Chat Archiver] turnSelector "${config.turnSelector}" matched 0 usable messages on ${host}. Site DOM may have changed. Falling back to full-page text capture.`
+      );
       const main = document.querySelector("main") || document.body;
       const text = main.innerText.trim();
       if (text) {
@@ -95,29 +103,34 @@
       return { ok: false, error: "No messages found on this page." };
     }
 
-    const { authToken } = await chrome.storage.local.get("authToken");
-    if (!authToken) {
-      return { ok: false, error: "Please log in first from the extension popup." };
+    // Delegate the actual network request to the background service worker.
+    // Content scripts inherit the page's security context (https://claude.ai),
+    // so an http:// fetch to a local dev server can be blocked as mixed
+    // content. The background worker runs in the extension's own context
+    // and isn't subject to that restriction.
+    let result;
+    try {
+      result = await chrome.runtime.sendMessage({
+        type: "SAVE_CHAT",
+        payload: {
+          site: convo.site,
+          title: convo.title,
+          url: convo.url,
+          captured_at: convo.capturedAt,
+          messages: convo.messages,
+        },
+      });
+    } catch (err) {
+      // Extension context invalidated (extension reloaded/updated while page open)
+      console.error("[Chat Archiver] sendMessage to background failed:", err);
+      return {
+        ok: false,
+        error: "Extension was reloaded. Please refresh this page and try again.",
+      };
     }
 
-    const response = await fetch("http://127.0.0.1:8000/chats", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify({
-        site: convo.site,
-        title: convo.title,
-        url: convo.url,
-        captured_at: convo.capturedAt,
-        messages: convo.messages,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.text();
-      return { ok: false, error: errorData || "Failed to save chat." };
+    if (!result || !result.ok) {
+      return { ok: false, error: (result && result.error) || "Failed to save chat." };
     }
 
     return { ok: true, count: convo.messages.length };
@@ -126,10 +139,8 @@
   // ---- Inject -------------------------------------------------------------
   function setEditableText(el, text) {
     el.focus();
-    // Clear existing content
     document.execCommand("selectAll", false, null);
     document.execCommand("delete", false, null);
-    // Insert new text, preserving newlines as separate insertText calls
     const lines = text.split("\n");
     lines.forEach((line, i) => {
       document.execCommand("insertText", false, line);
@@ -160,18 +171,15 @@
     if (input.tagName === "TEXTAREA") {
       setTextareaText(input, text);
     } else {
-      // contenteditable div (ChatGPT prompt box, Claude ProseMirror, Gemini Quill)
       setEditableText(input, text);
     }
 
     if (autoSubmit) {
-      // Give the site's framework a tick to register the input before submitting.
       await new Promise((r) => setTimeout(r, 150));
       const submitBtn = document.querySelector(config.submitSelector);
       if (submitBtn && !submitBtn.disabled) {
         submitBtn.click();
       } else {
-        // Fallback: simulate Enter key
         input.dispatchEvent(
           new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true })
         );
@@ -183,11 +191,21 @@
   // ---- Message bridge to popup -------------------------------------------
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === "CAPTURE_CHAT") {
-      saveCapture().then(sendResponse);
-      return true; // async response
+      saveCapture()
+        .then(sendResponse)
+        .catch((err) => {
+          console.error("[Chat Archiver] Unhandled error in saveCapture:", err);
+          sendResponse({ ok: false, error: String(err) });
+        });
+      return true;
     }
     if (msg.type === "INJECT_PROMPT") {
-      injectPrompt(msg.text, msg.autoSubmit).then(sendResponse);
+      injectPrompt(msg.text, msg.autoSubmit)
+        .then(sendResponse)
+        .catch((err) => {
+          console.error("[Chat Archiver] Unhandled error in injectPrompt:", err);
+          sendResponse({ ok: false, error: String(err) });
+        });
       return true;
     }
     if (msg.type === "PING") {
