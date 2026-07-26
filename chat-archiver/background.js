@@ -8,6 +8,12 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
+// Clicking the toolbar icon opens the side panel (no default_popup is set,
+// so action.onClicked fires normally).
+chrome.sidePanel
+  .setPanelBehavior({ openPanelOnActionClick: true })
+  .catch((err) => console.error("[SYNAPSE background] setPanelBehavior failed:", err));
+
 // Handles network requests to the local archive server on behalf of
 // content scripts. Content scripts inherit the page's security context
 // (e.g. https://claude.ai), so fetching http://127.0.0.1:8000 from them
