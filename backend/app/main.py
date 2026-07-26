@@ -20,6 +20,9 @@ app.add_middleware(
 def startup_event() -> None:
     init_db()
 
+@app.get("/")
+def root() -> dict[str, str]:
+    return {"message": "Welcome to the Synapse API!"}
 
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
