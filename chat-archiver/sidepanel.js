@@ -1,6 +1,62 @@
 const SUPPORTED_HOSTS = ["chatgpt.com", "chat.openai.com", "claude.ai", "gemini.google.com"];
 const API_BASE_URL = "http://127.0.0.1:8000";
 
+// ============================================================
+// Theme Management
+// ============================================================
+
+const THEME_KEY = "synapse-theme";
+const DARK_THEME = "dark";
+const LIGHT_THEME = "light";
+
+function initTheme() {
+  const themeLink = document.getElementById("themeLink");
+  const themeToggle = document.getElementById("themeToggle");
+  
+  // Get saved theme or use system preference
+  let savedTheme = localStorage.getItem(THEME_KEY);
+  
+  if (!savedTheme) {
+    // Use system preference
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    savedTheme = prefersDark ? DARK_THEME : LIGHT_THEME;
+  }
+  
+  applyTheme(savedTheme, themeLink, themeToggle);
+  
+  // Listen for theme toggle
+  themeToggle.addEventListener("click", () => {
+    const currentTheme = themeLink.href.includes("dark") ? DARK_THEME : LIGHT_THEME;
+    const newTheme = currentTheme === DARK_THEME ? LIGHT_THEME : DARK_THEME;
+    applyTheme(newTheme, themeLink, themeToggle);
+    localStorage.setItem(THEME_KEY, newTheme);
+  });
+  
+  // Listen for system theme changes
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
+    if (!localStorage.getItem(THEME_KEY)) {
+      const newTheme = e.matches ? DARK_THEME : LIGHT_THEME;
+      applyTheme(newTheme, themeLink, themeToggle);
+    }
+  });
+}
+
+function applyTheme(theme, themeLink, themeToggle) {
+  const isDark = theme === DARK_THEME;
+  themeLink.href = isDark ? "sidepanel-dark.css" : "sidepanel-light.css";
+  themeToggle.textContent = isDark ? "☀️" : "🌙";
+  themeToggle.title = isDark ? "Switch to light mode" : "Switch to dark mode";
+}
+
+// Initialize theme when DOM is ready
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initTheme);
+} else {
+  initTheme();
+}
+
+// ============================================================
+
 const siteStatusEl = document.getElementById("siteStatus");
 const captureBtn = document.getElementById("captureBtn");
 const captureMsgEl = document.getElementById("captureMsg");

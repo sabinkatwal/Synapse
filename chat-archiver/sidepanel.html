@@ -3,112 +3,67 @@
 <head>
 <meta charset="utf-8" />
 <title>Synapse</title>
+<link rel="stylesheet" href="sidepanel-dark.css" id="themeLink" />
 <style>
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-size: 13px;
-    background: #111318;
-    color: #e6e8ec;
+  header {
+    position: relative;
   }
-  .section {
-    padding: 12px 16px;
-    border-bottom: 1px solid #23262e;
+  
+  .theme-toggle {
+    position: absolute !important;
   }
-  h2 { font-size: 15px; margin: 0 0 8px; }
-  input, textarea {
-    width: 100%;
-    background: #1d2129;
-    border: 1px solid #2b2f38;
-    color: #e6e8ec;
-    border-radius: 6px;
-    padding: 8px;
-    font-size: 12px;
-    margin-bottom: 8px;
-  }
-  textarea { min-height: 70px; resize: vertical; }
-  button {
-    background: #1d2129;
-    border: 1px solid #2b2f38;
-    color: #e6e8ec;
-    padding: 8px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 12px;
-  }
-  button:hover { background: #262b34; }
-  button:disabled { opacity: 0.5; cursor: default; }
-  button.primary { background: #3b5bfd; border-color: #3b5bfd; }
-  .row { display: flex; gap: 8px; margin-bottom: 8px; }
-  .row button { flex: 1; }
-  #siteStatus { font-size: 12px; color: #8a8f98; margin-bottom: 8px; }
-  #siteStatus.active { color: #6bdf8f; }
-  .msg { font-size: 11px; min-height: 14px; }
-  .msg.ok { color: #6bdf8f; }
-  .msg.err { color: #ff6b6b; }
-  label.check { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #8a8f98; margin-bottom: 8px; }
-  label.check input { width: auto; margin: 0; }
-  .listHeader { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-  .listHeader .count { color: #8a8f98; font-size: 11px; }
-  #chatList { max-height: none; }
-  .chatItem {
-    padding: 8px 10px;
-    background: #1a1d24;
-    border: 1px solid #23262e;
-    border-radius: 6px;
-    margin-bottom: 6px;
-  }
-  .chatItem .site { font-weight: 600; text-transform: capitalize; }
-  .chatItem .meta { font-size: 10px; color: #8a8f98; margin-top: 4px; }
-  .chatItem .actions { display: flex; gap: 6px; margin-top: 6px; }
-  .chatItem .actions button { padding: 4px 8px; font-size: 11px; }
-  #emptyState { color: #8a8f98; font-size: 12px; text-align: center; padding: 16px 0; }
 </style>
 </head>
 <body>
 
-  <div class="section" id="authSection">
-    <h2>Synapse</h2>
+  <header>
+    <div class="brand">
+      <div class="brand-mark">⚡</div>
+      <h1>Synapse</h1>
+    </div>
+    <div class="status">
+      <span id="siteStatus">Checking…</span>
+    </div>
+    <button class="theme-toggle" id="themeToggle" title="Toggle theme">🌙</button>
+  </header>
+
+  <section id="authSection">
+    <h2>Authentication</h2>
     <input id="emailInput" type="email" placeholder="Email" />
     <input id="passwordInput" type="password" placeholder="Password" />
     <div class="row">
-      <button id="loginBtn">Log in</button>
-      <button id="registerBtn">Register</button>
+      <button id="loginBtn" class="secondary">Log in</button>
+      <button id="registerBtn" class="secondary">Register</button>
     </div>
     <div id="authMsg" class="msg"></div>
-  </div>
+  </section>
 
-  <div class="section">
-    <div id="siteStatus">Checking current tab…</div>
-    <div class="row">
-      <button id="captureBtn" class="primary">Capture this conversation</button>
-    </div>
+  <section id="captureSection">
+    <h2><span class="idx">📸</span>Capture</h2>
+    <button id="captureBtn">Capture this conversation</button>
     <div id="captureMsg" class="msg"></div>
-  </div>
+  </section>
 
-  <div class="section">
+  <section id="injectSection">
+    <h2><span class="idx">💉</span>Inject Prompt</h2>
     <textarea id="promptText" placeholder="Type a prompt to inject into the active chat..."></textarea>
-    <label class="check">
+    <label class="checkbox">
       <input type="checkbox" id="autoSubmit" checked />
+      <span class="checkbox-box"></span>
       Auto-submit after inserting
     </label>
-    <div class="row">
-      <button id="injectBtn">Inject prompt</button>
-    </div>
+    <button id="injectBtn">Inject prompt</button>
     <div id="injectMsg" class="msg"></div>
-  </div>
+  </section>
 
-  <div class="section">
-    <div class="listHeader">
-      <strong>Archived chats (<span id="chatCount">0</span>)</strong>
-      <div class="row" style="margin:0; gap:6px;">
-        <button id="exportBtn">Export</button>
-        <button id="clearBtn">Clear all</button>
-      </div>
+  <section id="archiveSection">
+    <h2><span class="idx">📁</span>Archived Chats <span class="count-badge"><span id="chatCount">0</span></span></h2>
+    <div id="chatList"><div id="emptyState">No captured conversations yet.</div></div>
+    <div class="footer-actions">
+      <button id="exportBtn" class="secondary">Export</button>
+      <button id="clearBtn" class="danger">Clear all</button>
     </div>
-    <div id="chatList"><div id="emptyState">No captures yet.</div></div>
-  </div>
+  </section>
 
   <script src="sidepanel.js"></script>
 </body>
