@@ -69,7 +69,11 @@ const passwordInputEl = document.getElementById("passwordInput");
 const registerBtn = document.getElementById("registerBtn");
 const loginBtn = document.getElementById("loginBtn");
 const authMsgEl = document.getElementById("authMsg");
-const authSectionEl = document.getElementById("authSection");
+const loggedOutViewEl = document.getElementById("loggedOutView");
+const loggedInViewEl = document.getElementById("loggedInView");
+const userEmailEl = document.getElementById("userEmail");
+const avatarInitialEl = document.getElementById("avatarInitial");
+const logoutBtn = document.getElementById("logoutBtn");
 const chatListEl = document.getElementById("chatList");
 const chatCountEl = document.getElementById("chatCount");
 const exportBtn = document.getElementById("exportBtn");
@@ -81,6 +85,11 @@ let siteSupported = false;
 async function getAuthToken() {
   const { authToken } = await chrome.storage.local.get("authToken");
   return authToken || null;
+}
+
+async function getStoredEmail() {
+  const { userEmail } = await chrome.storage.local.get("userEmail");
+  return userEmail || null;
 }
 
 async function apiRequest(path, options = {}) {
@@ -158,8 +167,23 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 // ---- Auth ---------------------------------------------------------------
 async function refreshAuthUI() {
   const token = await getAuthToken();
-  authSectionEl.style.display = token ? "none" : "block";
+  if (token) {
+    const email = await getStoredEmail();
+    userEmailEl.textContent = email || "Logged in";
+    avatarInitialEl.textContent = (email || "?").trim().charAt(0).toUpperCase();
+    loggedOutViewEl.style.display = "none";
+    loggedInViewEl.style.display = "block";
+  } else {
+    loggedOutViewEl.style.display = "block";
+    loggedInViewEl.style.display = "none";
+  }
 }
+
+logoutBtn.addEventListener("click", async () => {
+  await chrome.storage.local.remove(["authToken", "userEmail"]);
+  setMsg(authMsgEl, "Logged out.", true);
+  await refreshAuthUI();
+});
 
 registerBtn.addEventListener("click", async () => {
   const email = emailInputEl.value.trim();
@@ -173,7 +197,7 @@ registerBtn.addEventListener("click", async () => {
       method: "POST",
       body: JSON.stringify({ email, password }),
     });
-    await chrome.storage.local.set({ authToken: data.access_token });
+    await chrome.storage.local.set({ authToken: data.access_token, userEmail: email });
     setMsg(authMsgEl, "Registered and logged in.", true);
     await refreshAuthUI();
     await refreshChatList();
@@ -194,7 +218,7 @@ loginBtn.addEventListener("click", async () => {
       method: "POST",
       body: JSON.stringify({ email, password }),
     });
-    await chrome.storage.local.set({ authToken: data.access_token });
+    await chrome.storage.local.set({ authToken: data.access_token, userEmail: email });
     setMsg(authMsgEl, "Logged in.", true);
     await refreshAuthUI();
     await refreshChatList();

@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "SYNAPSE",
+  "name": "SYNAPSE-Chat Archiver",
   "version": "1.0.0",
   "description": "Capture and archive your own conversation history from ChatGPT, Claude, and Gemini. Also lets you inject a prompt into the active chat.",
   "permissions": ["storage", "activeTab", "scripting", "sidePanel"],
@@ -12,6 +12,7 @@
     "http://127.0.0.1:8000/*"
   ],
   "action": {
+    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

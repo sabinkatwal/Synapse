@@ -8,8 +8,11 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-// Clicking the toolbar icon opens the side panel (no default_popup is set,
-// so action.onClicked fires normally).
+// The toolbar icon now opens popup.html (see manifest.json's
+// action.default_popup), so chrome.action.onClicked never fires and this
+// setting has no effect on toolbar clicks. The side panel is instead opened
+// on demand from a button inside the popup via chrome.sidePanel.open().
+// Left in place as a harmless no-op in case default_popup is ever removed.
 chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch((err) => console.error("[SYNAPSE background] setPanelBehavior failed:", err));
