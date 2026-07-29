@@ -6,6 +6,9 @@ import StatsGrid from './StatsGrid';
 import ChatList from './ChatList';
 import ChatViewer from './ChatViewer';
 import SiteBreakdown from './SiteBreakdown';
+import SettingsPanel from './SettingsPanel';
+import AnalyticsPanel from './AnalyticsPanel';
+import MemoriesPanel from './MemoriesPanel';
 
 function Dashboard({ onLogout }) {
   const {
@@ -154,23 +157,29 @@ function Dashboard({ onLogout }) {
 
 
         {activeTab === "memories" && (
-          <div className="empty-state">
-            🧠 Memory Explorer coming soon
-          </div>
+          <MemoriesPanel
+            chats={chats}
+            onOpenChat={setActiveChat}
+          />
         )}
 
 
         {activeTab === "analytics" && (
-          <div className="empty-state">
-            📈 Analytics coming soon
-          </div>
+          <AnalyticsPanel
+            chats={chats}
+            siteCounts={siteCounts}
+            favoriteCount={favoriteCount}
+            topSite={topSite}
+          />
         )}
 
 
         {activeTab === "settings" && (
-          <div className="empty-state">
-            ⚙️ Settings coming soon
-          </div>
+          <SettingsPanel
+            chats={chats}
+            onReload={reload}
+            onLogout={onLogout}
+          />
         )}
 
       </main>

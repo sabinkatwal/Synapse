@@ -8,13 +8,15 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-// The toolbar icon now opens popup.html (see manifest.json's
-// action.default_popup), so chrome.action.onClicked never fires and this
-// setting has no effect on toolbar clicks. The side panel is instead opened
-// on demand from a button inside the popup via chrome.sidePanel.open().
-// Left in place as a harmless no-op in case default_popup is ever removed.
+// IMPORTANT: this must be false. The toolbar icon opens popup.html (see
+// manifest.json's action.default_popup) — the side panel is opened on
+// demand from a button inside the popup via chrome.sidePanel.open().
+// A previous version of this file set this to `true`, and Chrome persists
+// that preference per-extension; simply removing the call later does NOT
+// clear the stored value. Setting it to `false` here explicitly overwrites
+// that leftover state so the toolbar icon reliably opens the popup again.
 chrome.sidePanel
-  .setPanelBehavior({ openPanelOnActionClick: true })
+  .setPanelBehavior({ openPanelOnActionClick: false })
   .catch((err) => console.error("[SYNAPSE background] setPanelBehavior failed:", err));
 
 // Handles network requests to the local archive server on behalf of
