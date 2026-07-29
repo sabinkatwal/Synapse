@@ -1,34 +1,45 @@
-import { useState } from 'react';
-import { fetchJson, getToken, setToken, clearToken } from '../api/client';
+import { useEffect, useMemo, useState } from 'react';
+import { fetchJson } from '../api/client';
 
-export function useAuth() {
-  const [isLoggedIn, setIsLoggedIn] = useState(!!getToken());
-  const [loading, setLoading] = useState(false);
+export function useChats() {
+  const [chats, setChats] = useState([]);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  const login = async (email, password) => {
-    setError('');
+  const load = async () => {
     setLoading(true);
+    setError('');
     try {
-      const response = await fetchJson('/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email, password }),
-      });
-      setToken(response.access_token);
-      setIsLoggedIn(true);
-      return true;
+      const data = await fetchJson('/chats');
+      setChats(data);
     } catch (err) {
       setError(err.message);
-      return false;
     } finally {
       setLoading(false);
     }
   };
 
-  const logout = () => {
-    clearToken();
-    setIsLoggedIn(false);
-  };
+  useEffect(() => {
+    load();
+  }, []);
 
-  return { isLoggedIn, login, logout, loading, error };
+  const favoriteCount = useMemo(
+    () => chats.filter((chat) => chat.favorite).length,
+    [chats]
+  );
+
+  const siteCounts = useMemo(() => {
+    return chats.reduce((acc, chat) => {
+      acc[chat.site] = (acc[chat.site] || 0) + 1;
+      return acc;
+    }, {});
+  }, [chats]);
+
+  const topSite = useMemo(() => {
+    const entries = Object.entries(siteCounts);
+    if (!entries.length) return null;
+    return entries.sort((a, b) => b[1] - a[1])[0];
+  }, [siteCounts]);
+
+  return { chats, error, loading, favoriteCount, siteCounts, topSite, reload: load };
 }

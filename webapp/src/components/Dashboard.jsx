@@ -85,7 +85,7 @@ function Dashboard({ onLogout }) {
 
             <h1>
               {activeTab === "dashboard" 
-                ? "Chat Archive Dashboard"
+                ? "Chat Archive Dashboards"
                 : activeTab}
             </h1>
           </div>
