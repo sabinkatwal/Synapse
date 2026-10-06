@@ -180,6 +180,19 @@ async function refreshAuthUI() {
   }
 }
 
+async function loadPendingPrompt() {
+  const { pendingPrompt } = await chrome.storage.local.get("pendingPrompt");
+  if (!pendingPrompt || promptTextEl.value.trim()) return;
+  promptTextEl.value = pendingPrompt;
+  setMsg(injectMsgEl, "Prompt received from Synapse webapp.", true);
+}
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !changes.pendingPrompt?.newValue || promptTextEl.value.trim()) return;
+  promptTextEl.value = changes.pendingPrompt.newValue;
+  setMsg(injectMsgEl, "Prompt received from Synapse webapp.", true);
+});
+
 logoutBtn.addEventListener("click", async () => {
   await chrome.storage.local.remove(["authToken", "userEmail"]);
   setMsg(authMsgEl, "Logged out.", true);
@@ -278,6 +291,7 @@ injectBtn.addEventListener("click", async () => {
     if (res && res.ok) {
       setMsg(injectMsgEl, "Injected.", true);
       promptTextEl.value = "";
+      await chrome.storage.local.remove("pendingPrompt");
     } else {
       setMsg(injectMsgEl, res?.error || "Injection failed.", false);
     }
@@ -375,6 +389,7 @@ async function init() {
   await refreshAuthUI();
   await refreshActiveTab();
   await refreshChatList();
+  await loadPendingPrompt();
 }
 
 init();

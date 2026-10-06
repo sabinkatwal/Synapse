@@ -776,6 +776,31 @@ SECTION CARD / LISTS
 .chat-card h3{ margin-bottom:6px; font-size:.98rem; }
 .chat-card p{ font-size:.85rem; }
 
+.chat-card-actions{ display:flex; flex-wrap:wrap; gap:8px; flex-shrink:0; }
+.chat-card-status{
+    display:block;
+    max-width:520px;
+    margin-top:8px;
+    color:var(--muted);
+    line-height:1.4;
+}
+
+.extracted-memory-list{
+    display:grid;
+    gap:6px;
+    margin-top:12px;
+    max-width:680px;
+    padding:10px 12px;
+    border-left:3px solid var(--success);
+    background:var(--success-soft);
+    color:var(--muted);
+    font-size:.78rem;
+    line-height:1.4;
+}
+.extracted-memory-list strong{ color:var(--text); font-size:.8rem; }
+.extracted-memory-list span{ display:block; }
+.extracted-memory-list b{ color:var(--text); text-transform:capitalize; }
+
 .breakdown-grid{
     display:grid;
     grid-template-columns:repeat(auto-fill,minmax(140px,1fr));

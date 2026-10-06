@@ -73,3 +73,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // keep the message channel open for async sendResponse
   }
 });
+
+chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
+  if (msg.type !== "PUSH_PROMPT_TO_ACTIVE_AI") return;
+
+  storePushedPrompt(msg.text)
+    .then(sendResponse)
+    .catch((err) => {
+      console.error("[SYNAPSE background] Could not store external prompt:", err);
+      sendResponse({ ok: false, error: String(err.message || err) });
+    });
+  return true;
+});
+
+async function storePushedPrompt(text) {
+  if (!text || typeof text !== "string") {
+    return { ok: false, error: "Prompt is empty." };
+  }
+
+  await chrome.storage.local.set({
+    pendingPrompt: text,
+    pendingPromptUpdatedAt: new Date().toISOString(),
+  });
+  return { ok: true, stored: true };
+}

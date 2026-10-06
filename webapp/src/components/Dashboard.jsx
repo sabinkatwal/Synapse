@@ -14,6 +14,7 @@ import UserDashboard from './UserDashboard';
 import StatsGrid from './StatsGrid';
 import ChatList from './ChatList';
 import ChatViewer from './ChatViewer';
+import ExtractionViewer from './ExtractionViewer';
 import SiteBreakdown from './SiteBreakdown';
 import SettingsPanel from './SettingsPanel';
 import AnalyticsPanel from './AnalyticsPanel';
@@ -33,6 +34,7 @@ function Dashboard({ onLogout }) {
   } = useChats();
 
   const [activeChat, setActiveChat] = useState(null);
+  const [extractionChat, setExtractionChat] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [commandOpen, setCommandOpen] = useState(false);
 
@@ -129,6 +131,7 @@ function Dashboard({ onLogout }) {
                   error={error}
                   onReload={reload}
                   onOpenChat={setActiveChat}
+                  onExtract={setExtractionChat}
                 />
               </div>
 
@@ -150,6 +153,7 @@ function Dashboard({ onLogout }) {
             error={error}
             onReload={reload}
             onOpenChat={setActiveChat}
+            onExtract={setExtractionChat}
           />
         )}
 
@@ -179,6 +183,13 @@ function Dashboard({ onLogout }) {
         <ChatViewer
           chat={activeChat}
           onClose={() => setActiveChat(null)}
+        />
+      )}
+
+      {extractionChat && (
+        <ExtractionViewer
+          chat={extractionChat}
+          onClose={() => setExtractionChat(null)}
         />
       )}
 

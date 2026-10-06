@@ -1,6 +1,6 @@
 import ChatCard from './ChatCard';
 
-function ChatList({ chats, loading, error, onReload, onOpenChat }) {
+function ChatList({ chats, loading, error, onReload, onOpenChat, onExtract }) {
   return (
     <section className="section-card">
       <div className="section-header">
@@ -19,7 +19,7 @@ function ChatList({ chats, loading, error, onReload, onOpenChat }) {
 
       <div className="chat-list">
         {chats.map((chat) => (
-          <ChatCard key={chat.id} chat={chat} onOpen={onOpenChat} />
+          <ChatCard key={chat.id} chat={chat} onOpen={onOpenChat} onExtract={onExtract} />
         ))}
       </div>
     </section>

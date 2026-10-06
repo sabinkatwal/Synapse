@@ -11,6 +11,12 @@
     "https://gemini.google.com/*",
     "http://127.0.0.1:8000/*"
   ],
+  "externally_connectable": {
+    "matches": [
+      "http://localhost:4173/*",
+      "http://127.0.0.1:4173/*"
+    ]
+  },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {

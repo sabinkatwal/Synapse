@@ -19,6 +19,16 @@ class MemoryExtractorTests(unittest.TestCase):
         self.assertTrue(any("TypeScript" in item["content"] for item in memories))
         self.assertTrue(any("Synapse" in item["content"] for item in memories))
 
+    def test_ignores_assistant_explanations_and_transient_questions(self):
+        messages = [
+            {"role": "user", "text": "teach me something in 3 mins"},
+            {"role": "assistant", "text": "Here is a long explanation that should not become user memory."},
+        ]
+
+        memories = extract_memories_from_messages(messages)
+
+        self.assertEqual(memories, [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -55,6 +55,17 @@ def _build_memory_record(content: str) -> dict | None:
     lower = cleaned.lower()
     if lower.startswith(("hello ", "hi ", "thanks ", "thank you ")):
         return None
+    if cleaned.endswith("?") or lower.startswith((
+        "teach me",
+        "explain ",
+        "what is ",
+        "how do ",
+        "how can ",
+        "tell me ",
+        "help me ",
+        "summarize ",
+    )):
+        return None
 
     confidence = 0.75 if any(
         pattern in lower
@@ -78,6 +89,10 @@ def extract_memories_from_messages(messages: list[dict] | list) -> list[dict]:
 
     for message in messages:
         if not isinstance(message, dict):
+            continue
+
+        role = str(message.get("role") or "").lower()
+        if role not in {"user", "human"}:
             continue
 
         text = str(message.get("text") or "").strip()
