@@ -38,6 +38,27 @@ export default function MainPage() {
     });
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+
+    chrome.storage.local.get("pendingPrompt").then(({ pendingPrompt }) => {
+      if (mounted && pendingPrompt) setPromptText(pendingPrompt);
+    });
+
+    const handleStorageChange = (changes, areaName) => {
+      if (areaName === "local" && changes.pendingPrompt?.newValue) {
+        setPromptText(changes.pendingPrompt.newValue);
+        showMessage("Prompt received from Synapse webapp.", "ok");
+      }
+    };
+
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    return () => {
+      mounted = false;
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+    };
+  }, []);
+
   const showMessage = (text, type = "ok") => {
     setMessage(text);
     setMessageType(type);
@@ -90,6 +111,7 @@ export default function MainPage() {
       if (response?.ok) {
         showMessage("Injected.", "ok");
         setPromptText("");
+        await chrome.storage.local.remove("pendingPrompt");
       } else {
         showMessage(response?.error || "Injection failed.", "err");
       }
