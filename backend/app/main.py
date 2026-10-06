@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import init_db
 from app.routes.auth import router as auth_router
 from app.routes.chats import router as chats_router
+from app.routes.memories import router as memories_router
 
 app = FastAPI(title="Synapse API", version="1.0.0")
 
@@ -35,3 +36,4 @@ def healthz() -> dict[str, str]:
 
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(chats_router, prefix="/chats", tags=["chats"])
+app.include_router(memories_router, prefix="/memories", tags=["memories"])

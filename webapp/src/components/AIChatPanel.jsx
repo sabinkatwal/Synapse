@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { fetchJson } from '../api/client';
 
 const EXAMPLE_PROMPTS = [
   'What did I learn about authentication?',
@@ -48,6 +49,10 @@ function buildAnswer(question, sources) {
 function AIChatPanel({ chats, onOpenChat }) {
   const [question, setQuestion] = useState('');
   const [submittedQuestion, setSubmittedQuestion] = useState('');
+  const [memoryContext, setMemoryContext] = useState('');
+  const [memoryMatches, setMemoryMatches] = useState([]);
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const [memoryError, setMemoryError] = useState('');
 
   const sources = useMemo(() => {
     const terms = getTerms(submittedQuestion || question);
@@ -64,9 +69,29 @@ function AIChatPanel({ chats, onOpenChat }) {
     return buildAnswer(submittedQuestion, sources);
   }, [submittedQuestion, sources]);
 
-  const ask = (value = question) => {
+  const ask = async (value = question) => {
+    const nextQuestion = value.trim();
+    if (!nextQuestion) return;
+
     setQuestion(value);
-    setSubmittedQuestion(value);
+    setSubmittedQuestion(nextQuestion);
+    setMemoryLoading(true);
+    setMemoryError('');
+
+    try {
+      const response = await fetchJson('/memories/context', {
+        method: 'POST',
+        body: JSON.stringify({ query: nextQuestion, limit: 5 }),
+      });
+      setMemoryContext(response.context || '');
+      setMemoryMatches(response.memories || []);
+    } catch (error) {
+      setMemoryContext('');
+      setMemoryMatches([]);
+      setMemoryError('Memory context is unavailable. Showing archive matches instead.');
+    } finally {
+      setMemoryLoading(false);
+    }
   };
 
   return (
@@ -92,8 +117,17 @@ function AIChatPanel({ chats, onOpenChat }) {
           <div className="ai-chat-thread">
             <div className="ai-message assistant">
               <span>Synapse</span>
-              <p>{answer}</p>
+              <p>{memoryLoading ? 'Searching your memories and captured conversations…' : answer}</p>
             </div>
+
+            {memoryContext && (
+              <div className="ai-memory-context">
+                <span>Retrieved Memory Context</span>
+                <pre>{memoryContext}</pre>
+              </div>
+            )}
+
+            {memoryError && <div className="ai-memory-status">{memoryError}</div>}
 
             {submittedQuestion && (
               <div className="ai-message user">
@@ -133,6 +167,26 @@ function AIChatPanel({ chats, onOpenChat }) {
                   {prompt}
                 </button>
               ))}
+            </div>
+          </article>
+
+          <article className="ai-chat-card">
+            <div className="section-header">
+              <div>
+                <h2>Memory Matches</h2>
+                <p>Backend-ranked context for this question.</p>
+              </div>
+            </div>
+            <div className="source-list">
+              {memoryMatches.map((memory) => (
+                <div key={memory.id} className="memory-match">
+                  <strong>{memory.title || memory.memory_type}</strong>
+                  <span>{memory.content}</span>
+                </div>
+              ))}
+              {!memoryMatches.length && (
+                <div className="empty-state">Ask a question to retrieve relevant memories.</div>
+              )}
             </div>
           </article>
 

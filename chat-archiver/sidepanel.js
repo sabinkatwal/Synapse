@@ -64,6 +64,7 @@ const injectBtn = document.getElementById("injectBtn");
 const injectMsgEl = document.getElementById("injectMsg");
 const promptTextEl = document.getElementById("promptText");
 const autoSubmitEl = document.getElementById("autoSubmit");
+const includeMemoryContextEl = document.getElementById("includeMemoryContext");
 const emailInputEl = document.getElementById("emailInput");
 const passwordInputEl = document.getElementById("passwordInput");
 const registerBtn = document.getElementById("registerBtn");
@@ -254,9 +255,24 @@ injectBtn.addEventListener("click", async () => {
   }
   injectBtn.disabled = true;
   try {
+    let prompt = text;
+    if (includeMemoryContextEl.checked && (await getAuthToken())) {
+      try {
+        const contextResponse = await apiRequest("/memories/context", {
+          method: "POST",
+          body: JSON.stringify({ query: text, limit: 5 }),
+        });
+        if (contextResponse.context) {
+          prompt = `${contextResponse.context}\n\nUse this context only when relevant.\n\nUser request:\n${text}`;
+        }
+      } catch (error) {
+        console.warn("[SYNAPSE side panel] Memory context unavailable:", error);
+      }
+    }
+
     const res = await chrome.tabs.sendMessage(activeTabId, {
       type: "INJECT_PROMPT",
-      text,
+      text: prompt,
       autoSubmit: autoSubmitEl.checked,
     });
     if (res && res.ok) {

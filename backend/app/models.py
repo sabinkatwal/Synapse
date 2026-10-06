@@ -41,6 +41,11 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
+    memories: Mapped[list["MemoryItem"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
 
 class Chat(Base):
     __tablename__ = "chats"
@@ -110,4 +115,77 @@ class Chat(Base):
 
     user: Mapped["User"] = relationship(
         back_populates="chats",
+    )
+
+
+class MemoryItem(Base):
+    __tablename__ = "memory_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    memory_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="fact",
+        index=True,
+    )
+
+    title: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    content: Mapped[str] = mapped_column(
+        String(5000),
+        nullable=False,
+    )
+
+    tags: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+    )
+
+    source: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        default="chat",
+    )
+
+    source_url: Mapped[str | None] = mapped_column(
+        String(2000),
+        nullable=True,
+    )
+
+    confidence: Mapped[float] = mapped_column(
+        default=0.5,
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    user: Mapped["User"] = relationship(
+        back_populates="memories",
     )

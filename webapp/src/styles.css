@@ -1294,6 +1294,61 @@ AI CHAT + COMMAND PALETTE
     color:#ffffff;
 }
 
+.ai-memory-context{
+    display:grid;
+    gap:8px;
+    padding:16px;
+    border:1px solid rgba(34,197,143,.24);
+    border-radius:16px;
+    background:var(--success-soft);
+}
+
+.ai-memory-context span,
+.ai-memory-status{
+    color:var(--muted);
+    font-size:.74rem;
+    font-weight:800;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+}
+
+.ai-memory-context pre{
+    margin:0;
+    white-space:pre-wrap;
+    color:var(--text);
+    font:inherit;
+    font-size:.86rem;
+    line-height:1.55;
+}
+
+.ai-memory-status{
+    padding:12px 14px;
+    border-radius:12px;
+    background:var(--warning-soft);
+    letter-spacing:0;
+    text-transform:none;
+}
+
+.memory-match{
+    display:grid;
+    gap:5px;
+    padding:14px;
+    border-radius:14px;
+    background:#ffffff;
+    border:1px solid var(--border);
+}
+
+.memory-match strong{
+    color:var(--text);
+    font-size:.88rem;
+}
+
+.memory-match span{
+    color:var(--muted);
+    font-size:.78rem;
+    line-height:1.45;
+}
+
 .ai-compose{
     display:grid;
     grid-template-columns:minmax(0,1fr) auto;
