@@ -18,6 +18,17 @@ from app.services.memory_retriever import build_memory_context, rank_memories
 router = APIRouter()
 
 
+def _message_for_extraction(message: object) -> dict[str, str]:
+    if not isinstance(message, dict):
+        return {"role": "", "text": ""}
+
+    text = message.get("text") or message.get("content") or message.get("message") or ""
+    role = message.get("role") or message.get("sender") or message.get("author") or "user"
+    if str(role).lower() in {"unknown", "user_message", "human_message"}:
+        role = "user"
+    return {"role": str(role), "text": str(text)}
+
+
 @router.get("", response_model=list[MemoryResponse])
 def list_memories(
     current_user: User = Depends(get_current_user),
@@ -64,10 +75,7 @@ def extract_memories(
         chat = db.query(Chat).filter(Chat.id == payload.chat_id, Chat.user_id == current_user.id).first()
         if not chat:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
-        messages = [
-            {"role": message.get("role", "user"), "text": str(message.get("text", ""))}
-            for message in chat.messages
-        ]
+        messages = [_message_for_extraction(message) for message in chat.messages]
 
     if not messages:
         return []

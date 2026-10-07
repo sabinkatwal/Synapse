@@ -66,7 +66,12 @@ function ExtractionViewer({ chat, onClose }) {
           {loading && <div className="extraction-state">Extracting structured memories…</div>}
           {error && <div className="extraction-state extraction-error">{error}</div>}
           {!loading && !error && !memories?.length && (
-            <div className="extraction-state">No structured memories were found in this conversation.</div>
+            <div className="extraction-state">
+              <div>
+                <strong>No structured memories were found.</strong>
+                <p>Try a conversation with user statements about your projects, preferences, goals, or facts.</p>
+              </div>
+            </div>
           )}
           {!loading && !error && memories?.length > 0 && (
             <div className="extraction-results">
@@ -95,7 +100,7 @@ function ExtractionViewer({ chat, onClose }) {
           </span>
           <div>
             <button className="small secondary" onClick={onClose}>Close</button>
-            <button className="small" onClick={handlePush} disabled={!memories || pushing}>
+            <button className="small" onClick={handlePush} disabled={!memories?.length || pushing}>
               {pushing ? 'Pushing…' : 'Push to extension'}
             </button>
           </div>
