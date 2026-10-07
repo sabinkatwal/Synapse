@@ -4,6 +4,7 @@ from app.services.memory_extractor import (
     _extract_tags,
     _make_title,
     extract_memories_from_messages,
+    find_superseded,
 )
 
 
@@ -67,11 +68,22 @@ def test_greeting_prefix_is_stripped_not_dropped():
         "I use token ghp_abcdefghijklmnopqrstuvwxyz0123456789",
         "My password is hunter2",
         "I use AKIAIOSFODNN7EXAMPLE for AWS access.",
-        "My email is someone@example.com and I use Gmail.",
     ],
 )
 def test_secrets_are_never_stored(text):
     assert run(text) == []
+
+
+def test_email_is_redacted_and_rest_is_kept():
+    out = run("My email is someone@example.com and I use Gmail.")
+    assert len(out) == 1
+    assert out[0]["content"] == "I use Gmail."
+    assert "someone@example.com" not in out[0]["content"]
+
+
+def test_email_inside_memory_is_redacted():
+    m = one("I use Gmail with someone@example.com.")
+    assert m["content"] == "I use Gmail with [email]."
 
 
 def test_code_blocks_are_ignored():
@@ -93,14 +105,74 @@ def test_dedup_and_confidence_sort_and_limit():
     assert len(run("I use Vim daily.", "I prefer dark mode.", limit=1)) == 1
 
 
+def test_near_duplicate_keeps_higher_confidence():
+    out = run("I probably prefer dark mode.", "I always prefer dark mode.")
+    assert len(out) == 1
+    assert out[0]["content"] == "I always prefer dark mode."
+
+
+def test_multi_clause_sentence_extracts_each_memory_type():
+    out = run("I prefer Railway and I'm building a Chrome extension.")
+    assert {m["memory_type"] for m in out} == {"preference", "project"}
+
+
 def test_hedged_statements_score_lower():
     assert one("I probably prefer dark mode.")["confidence"] < one("I prefer dark mode.")["confidence"]
+
+
+def test_explicit_markers_score_higher():
+    assert one("I always prefer dark mode.")["confidence"] > one("I prefer dark mode.")["confidence"]
+
+
+@pytest.mark.parametrize(
+    "text,expected_type",
+    [
+        ("I've been learning Rust.", "fact"),
+        ("I'd rather use Postgres.", "preference"),
+        ("I tend to avoid ORMs.", "preference"),
+        ("I'm into terminal tools.", "preference"),
+        ("I mostly use FastAPI.", "preference"),
+        ("I switched to Render.", "preference"),
+        ("I'm learning Go.", "fact"),
+        ("I no longer use Railway.", "preference"),
+    ],
+)
+def test_broader_first_person_patterns(text, expected_type):
+    assert one(text)["memory_type"] == expected_type
 
 
 def test_non_dict_and_assistant_messages_ignored():
     msgs = [None, "I prefer tea.", {"role": "assistant", "text": "I prefer coffee."}, {"role": "user", "content": "I prefer vim."}]
     out = extract_memories_from_messages(msgs)
     assert [m["content"] for m in out] == ["I prefer vim."]
+
+
+def test_platform_payload_with_alias_role_and_parts_is_extracted():
+    messages = [
+        {
+            "role": "you",
+            "content": [{"type": "text", "text": "I am building a private study planner."}],
+        },
+    ]
+    assert extract_memories_from_messages(messages)
+
+
+def test_empty_long_unicode_and_nepali_inputs_are_safe():
+    assert run("") == []
+    assert run("मलाई Python मन पर्छ।") == []
+    assert run("malai python man parcha") == []
+    assert {m["memory_type"] for m in run("I’m learning Go and I prefer “small” tools.")} == {"fact", "preference"}
+    assert run("I prefer " + ("very " * 90) + "long tools.") == []
+
+
+def test_find_superseded_returns_pairs_without_deleting():
+    old = one("I prefer Railway.")
+    new = one("I now prefer Render.")
+    assert find_superseded(new, [old]) == [(new, old)]
+
+
+def test_code_word_can_be_legitimate_goal():
+    assert one("I want to learn how to code.")["memory_type"] == "goal"
 
 
 # ---- tags / title -----------------------------------------------------------

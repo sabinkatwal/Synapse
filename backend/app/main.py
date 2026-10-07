@@ -6,10 +6,30 @@ from app.routes.auth import router as auth_router
 from app.routes.chats import router as chats_router
 from app.routes.memories import router as memories_router
 
-app = FastAPI(title="Synapse API", version="1.0.0")
+api = FastAPI(title="Synapse API", version="1.0.0")
 
-app.add_middleware(
-    CORSMiddleware,
+
+@api.on_event("startup")
+def startup_event() -> None:
+    init_db()
+
+@api.get("/")
+def root() -> dict[str, str]:
+    return {"message": "Welcome to the Synapse API!"}
+
+@api.get("/healthz")
+def healthz() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+api.include_router(auth_router, prefix="/auth", tags=["auth"])
+api.include_router(chats_router, prefix="/chats", tags=["chats"])
+api.include_router(memories_router, prefix="/memories", tags=["memories"])
+
+# Keep CORS outside FastAPI's error middleware so browser clients also receive
+# CORS headers when an unhandled backend exception produces a 500 response.
+app = CORSMiddleware(
+    api,
     allow_origins=[
         "chrome-extension://neaficlfbibdhlhkjjakoiijdlfollna",
         "http://127.0.0.1:4173",
@@ -19,21 +39,3 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def startup_event() -> None:
-    init_db()
-
-@app.get("/")
-def root() -> dict[str, str]:
-    return {"message": "Welcome to the Synapse API!"}
-
-@app.get("/healthz")
-def healthz() -> dict[str, str]:
-    return {"status": "ok"}
-
-
-app.include_router(auth_router, prefix="/auth", tags=["auth"])
-app.include_router(chats_router, prefix="/chats", tags=["chats"])
-app.include_router(memories_router, prefix="/memories", tags=["memories"])

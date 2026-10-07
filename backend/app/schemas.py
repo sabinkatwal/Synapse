@@ -89,7 +89,7 @@ class MemoryQuery(BaseModel):
 
 class MemoryExtractionRequest(BaseModel):
     chat_id: str | None = None
-    messages: list[Message] | None = None
+    messages: list[dict] | None = None
     limit: int = 5
 
 
@@ -103,10 +103,21 @@ class MemoryResponse(BaseModel):
     source: str
     source_url: str | None
     confidence: float
+    needs_review: bool = False
+    platform: str | None = None
+    conversation_url: str | None = None
+    message_index: int | None = None
+    extracted_at: datetime | None = None
+    sources: list[dict] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class MemoryExtractionResponse(BaseModel):
+    memories: list[MemoryResponse]
+    debug: dict
 
 
 class MemoryContextResponse(BaseModel):

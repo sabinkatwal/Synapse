@@ -1,7 +1,7 @@
 import os
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # Load environment variables from .env
@@ -39,6 +39,20 @@ def init_db():
     from app.models import User, Chat  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    if engine.dialect.name == "postgresql":
+        existing = {column["name"] for column in inspect(engine).get_columns("memory_items")}
+        additions = {
+            "needs_review": "BOOLEAN NOT NULL DEFAULT FALSE",
+            "platform": "VARCHAR(100)",
+            "conversation_url": "VARCHAR(2000)",
+            "message_index": "INTEGER",
+            "extracted_at": "TIMESTAMP WITH TIME ZONE",
+            "sources": "JSONB NOT NULL DEFAULT '[]'::jsonb",
+        }
+        with engine.begin() as connection:
+            for name, definition in additions.items():
+                if name not in existing:
+                    connection.execute(text(f'ALTER TABLE memory_items ADD COLUMN "{name}" {definition}'))
 
 
 def get_db():

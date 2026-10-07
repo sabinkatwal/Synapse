@@ -4,6 +4,7 @@ import './ChatViewer.css';
 
 function ExtractionViewer({ chat, onClose }) {
   const [memories, setMemories] = useState(null);
+  const [debug, setDebug] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pushing, setPushing] = useState(false);
   const [error, setError] = useState('');
@@ -14,7 +15,10 @@ function ExtractionViewer({ chat, onClose }) {
 
     extractConversation(chat)
       .then((result) => {
-        if (!cancelled) setMemories(result || []);
+        if (!cancelled) {
+          setMemories(result?.memories || []);
+          setDebug(result?.debug || null);
+        }
       })
       .catch((requestError) => {
         if (!cancelled) setError(requestError.message);
@@ -69,7 +73,12 @@ function ExtractionViewer({ chat, onClose }) {
             <div className="extraction-state">
               <div>
                 <strong>No structured memories were found.</strong>
-                <p>Try a conversation with user statements about your projects, preferences, goals, or facts.</p>
+                <p>
+                  Scanned {debug?.user_messages || 0} user messages and {debug?.sentences_examined || 0} sentences.
+                  {debug?.rejections?.question || debug?.rejections?.request
+                    ? ' Most were questions or requests.'
+                    : ' No durable statements matched the memory rules.'}
+                </p>
               </div>
             </div>
           )}

@@ -173,6 +173,13 @@ class MemoryItem(Base):
         nullable=False,
     )
 
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    platform: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    conversation_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    message_index: Mapped[int | None] = mapped_column(nullable=True)
+    extracted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sources: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -8,11 +10,13 @@ from app.models import MemoryItem, User
 from app.schemas import (
     MemoryContextResponse,
     MemoryCreate,
+    MemoryExtractionResponse,
     MemoryExtractionRequest,
     MemoryQuery,
     MemoryResponse,
 )
-from app.services.memory_extractor import extract_memories_from_messages
+from app.services.message_adapter import normalize_messages
+from app.services.memory_extractor import extract_with_report
 from app.services.memory_retriever import build_memory_context, rank_memories
 
 router = APIRouter()
@@ -64,23 +68,40 @@ def create_memory(
     return memory
 
 
-@router.post("/extract", response_model=list[MemoryResponse])
+@router.post("/extract", response_model=MemoryExtractionResponse)
 def extract_memories(
     payload: MemoryExtractionRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> list[MemoryItem]:
-    messages = payload.messages
+) -> MemoryExtractionResponse:
+    platform = None
+    conversation_url = None
+    title = None
+    messages = payload.messages or []
     if payload.chat_id:
         chat = db.query(Chat).filter(Chat.id == payload.chat_id, Chat.user_id == current_user.id).first()
         if not chat:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
-        messages = [_message_for_extraction(message) for message in chat.messages]
+        platform = chat.site
+        conversation_url = chat.url
+        title = chat.title
+        messages = chat.messages
 
     if not messages:
-        return []
+        return MemoryExtractionResponse(memories=[], debug={
+            "messages_seen": 0, "user_messages": 0, "empty_text_skips": 0,
+            "sentences_examined": 0, "accepted": 0, "rejections": {},
+        })
 
-    extracted = extract_memories_from_messages(messages)
+    normalized = normalize_messages(messages, platform=platform)
+    extracted, report = extract_with_report(
+        messages,
+        platform=platform,
+        conversation_url=conversation_url,
+        title=title,
+        include_topic=True,
+    )
+    report["messages_seen"] = len(messages)
     records: list[MemoryItem] = []
 
     for item in extracted[: max(1, payload.limit)]:
@@ -93,6 +114,12 @@ def extract_memories(
             source=item.get("source", "chat"),
             source_url=item.get("source_url"),
             confidence=item.get("confidence", 0.5),
+            needs_review=item.get("needs_review", False),
+            platform=item.get("platform"),
+            conversation_url=item.get("conversation_url"),
+            message_index=item.get("message_index"),
+            extracted_at=datetime.fromisoformat(item["extracted_at"]),
+            sources=item.get("sources", []),
         )
         db.add(memory)
         records.append(memory)
@@ -101,7 +128,7 @@ def extract_memories(
     for memory in records:
         db.refresh(memory)
 
-    return records
+    return MemoryExtractionResponse(memories=records, debug=report)
 
 
 @router.post("/relevant", response_model=list[MemoryResponse])
