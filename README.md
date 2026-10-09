@@ -50,7 +50,7 @@ Deploy `webapp/` as a Vercel project. Vercel detects Vite automatically; set
 the project root to `webapp` and add this environment variable:
 
 ```env
-VITE_API_BASE_URL=https://your-render-api.onrender.com
+VITE_API_BASE_URL=https://synapse-wqm8.onrender.com
 ```
 
 Deploy `backend/` as a Render web service. The repository includes

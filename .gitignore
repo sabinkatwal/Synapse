@@ -13,6 +13,7 @@ env/
 # Environment files
 .env
 .env.*
+!webapp/.env.production
 
 # IDE / editor
 .vscode/
