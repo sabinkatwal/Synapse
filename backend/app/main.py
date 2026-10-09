@@ -1,6 +1,7 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import os
 
 from app.database import init_db
 from app.routes.auth import router as auth_router
@@ -15,14 +16,9 @@ allowed_origins = [
     for origin in configured_origins.split(",")
     if origin.strip()
 ]
-allowed_origins.extend(
-    [
-        "chrome-extension://neaficlfbibdhlhkjjakoiijdlfollna",
-        "http://127.0.0.1:4173",
-        "http://localhost:4173",
-        "https://synapse-gsb7.vercel.app",
-    ]
-)
+allowed_origins.append("chrome-extension://neaficlfbibdhlhkjjakoiijdlfollna")
+if os.getenv("ENVIRONMENT", "development").lower() != "production":
+    allowed_origins.extend(["http://127.0.0.1:4173", "http://localhost:4173"])
 
 
 @api.on_event("startup")
@@ -48,6 +44,6 @@ app = CORSMiddleware(
     api,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )

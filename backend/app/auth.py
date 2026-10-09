@@ -1,5 +1,4 @@
 import os
-import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -16,8 +15,10 @@ ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))
 
 if not SECRET_KEY:
-    SECRET_KEY = secrets.token_hex(32)
-    print("Generated SECRET_KEY:", SECRET_KEY)
+    raise RuntimeError(
+        "SECRET_KEY is not set. Configure a persistent high-entropy secret "
+        "in backend/.env or the deployment secret manager."
+    )
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 

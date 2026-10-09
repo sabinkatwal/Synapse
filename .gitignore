@@ -13,6 +13,7 @@ env/
 # Environment files
 .env
 .env.*
+!.env.example
 !webapp/.env.production
 
 # IDE / editor
