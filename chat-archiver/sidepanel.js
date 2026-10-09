@@ -1,5 +1,5 @@
 const SUPPORTED_HOSTS = ["chatgpt.com", "chat.openai.com", "claude.ai", "gemini.google.com"];
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = "https://synapse-wqm8.onrender.com";
 
 // ============================================================
 // Theme Management

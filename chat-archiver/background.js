@@ -1,6 +1,6 @@
 // SYNAPSE - background service worker
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = "https://synapse-wqm8.onrender.com";
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.get("archivedChats").then(({ archivedChats }) => {
@@ -21,7 +21,7 @@ chrome.sidePanel
 
 // Handles network requests to the local archive server on behalf of
 // content scripts. Content scripts inherit the page's security context
-// (e.g. https://claude.ai), so fetching http://127.0.0.1:8000 from them
+// (e.g. https://claude.ai), so fetching the API from them
 // can be blocked as mixed content. The service worker runs in the
 // extension's own context (chrome-extension://...) and is not subject
 // to that restriction.
