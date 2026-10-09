@@ -20,8 +20,9 @@ services:
       - key: CORS_ORIGINS
         value: https://synapse-dashboard.onrender.com
 
-  - type: static_site
+  - type: web
     name: synapse-dashboard
+    runtime: static
     rootDir: webapp
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
