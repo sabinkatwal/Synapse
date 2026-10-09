@@ -42,14 +42,32 @@ SECRET_KEY=replace-with-a-long-random-value
 
 `DATABASE_URL` is required when the backend starts. Use a different database username, password, host, or port when your local PostgreSQL installation requires it.
 
-### Deploy with Render
+### Deploy the frontend to Vercel and backend to Render
 
-The repository includes [render.yaml](S:/Projects/Synapse/render.yaml), which
-creates the FastAPI API, PostgreSQL database, and static dashboard. In Render,
-choose **New > Blueprint**, connect this repository, and apply the blueprint.
-Enter `GROQ_API_KEY` when Render prompts for the secret value. The blueprint
-uses the default service names `synapse-api` and `synapse-dashboard`; update
-the two `*.onrender.com` URLs in `render.yaml` if you choose different names.
+Deploy `webapp/` as a Vercel project. Vercel detects Vite automatically; set
+the project root to `webapp` and add this environment variable:
+
+```env
+VITE_API_BASE_URL=https://your-render-api.onrender.com
+```
+
+Deploy `backend/` as a Render web service. The repository includes
+[render.yaml](S:/Projects/Synapse/render.yaml), which configures the
+production FastAPI command and health check. Add these Render variables:
+
+```env
+DATABASE_URL=your-postgresql-connection-string
+SECRET_KEY=your-long-random-secret
+GROQ_API_KEY=your-groq-key
+GROQ_MODEL=openai/gpt-oss-120b
+CORS_ORIGINS=https://your-vercel-project.vercel.app
+```
+
+Use an external PostgreSQL connection string for `DATABASE_URL` (for example,
+Supabase or another PostgreSQL provider). After both services are deployed,
+replace the placeholder URLs with the actual Render and Vercel domains. The Vercel project includes
+[vercel.json](S:/Projects/Synapse/webapp/vercel.json) so client-side routes
+fall back to the React entry point.
 
 ### 2. Start the backend
 
