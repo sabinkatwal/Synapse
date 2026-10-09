@@ -20,6 +20,7 @@ allowed_origins.extend(
         "chrome-extension://neaficlfbibdhlhkjjakoiijdlfollna",
         "http://127.0.0.1:4173",
         "http://localhost:4173",
+        "https://synapse-gsb7.vercel.app",
     ]
 )
 
