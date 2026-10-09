@@ -16,6 +16,6 @@ services:
       - key: GROQ_MODEL
         value: openai/gpt-oss-120b
       - key: PYTHON_VERSION
-        value: 3.13.5
+        value: 3.12.7
       - key: CORS_ORIGINS
         sync: false

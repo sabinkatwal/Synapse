@@ -41,6 +41,8 @@ SECRET_KEY=replace-with-a-long-random-value
 ```
 
 `DATABASE_URL` is required when the backend starts. Use a different database username, password, host, or port when your local PostgreSQL installation requires it.
+The repository pins Render deployments to Python 3.12.7 through
+[.python-version](S:/Projects/Synapse/.python-version).
 
 ### Deploy the frontend to Vercel and backend to Render
 
@@ -60,7 +62,7 @@ DATABASE_URL=your-postgresql-connection-string
 SECRET_KEY=your-long-random-secret
 GROQ_API_KEY=your-groq-key
 GROQ_MODEL=openai/gpt-oss-120b
-PYTHON_VERSION=3.13.5
+PYTHON_VERSION=3.12.7
 CORS_ORIGINS=https://your-vercel-project.vercel.app
 ```
 
