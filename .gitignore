@@ -34,6 +34,9 @@ Thumbs.db
 # Build / coverage
 .build/
 dist/
+!chat-archiver/dist/
+!chat-archiver/dist/popup.js
+!chat-archiver/dist/popup.js.map
 build/
 .coverage
 htmlcov/
