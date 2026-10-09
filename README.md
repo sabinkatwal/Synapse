@@ -60,6 +60,7 @@ DATABASE_URL=your-postgresql-connection-string
 SECRET_KEY=your-long-random-secret
 GROQ_API_KEY=your-groq-key
 GROQ_MODEL=openai/gpt-oss-120b
+PYTHON_VERSION=3.13.5
 CORS_ORIGINS=https://your-vercel-project.vercel.app
 ```
 
