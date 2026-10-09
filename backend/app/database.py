@@ -40,19 +40,25 @@ def init_db():
 
     Base.metadata.create_all(bind=engine)
     if engine.dialect.name == "postgresql":
-        existing = {column["name"] for column in inspect(engine).get_columns("memory_items")}
-        additions = {
-            "needs_review": "BOOLEAN NOT NULL DEFAULT FALSE",
-            "platform": "VARCHAR(100)",
-            "conversation_url": "VARCHAR(2000)",
-            "message_index": "INTEGER",
-            "extracted_at": "TIMESTAMP WITH TIME ZONE",
-            "sources": "JSONB NOT NULL DEFAULT '[]'::jsonb",
+        table_additions = {
+            "chats": {
+                "handoff_summary": "TEXT",
+            },
+            "memory_items": {
+                "needs_review": "BOOLEAN NOT NULL DEFAULT FALSE",
+                "platform": "VARCHAR(100)",
+                "conversation_url": "VARCHAR(2000)",
+                "message_index": "INTEGER",
+                "extracted_at": "TIMESTAMP WITH TIME ZONE",
+                "sources": "JSONB NOT NULL DEFAULT '[]'::jsonb",
+            },
         }
         with engine.begin() as connection:
-            for name, definition in additions.items():
-                if name not in existing:
-                    connection.execute(text(f'ALTER TABLE memory_items ADD COLUMN "{name}" {definition}'))
+            for table_name, additions in table_additions.items():
+                existing = {column["name"] for column in inspect(engine).get_columns(table_name)}
+                for name, definition in additions.items():
+                    if name not in existing:
+                        connection.execute(text(f'ALTER TABLE {table_name} ADD COLUMN "{name}" {definition}'))
 
 
 def get_db():

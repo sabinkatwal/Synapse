@@ -73,6 +73,11 @@
   padding: 24px 26px;
   background: linear-gradient(180deg, var(--bg), var(--card-solid));
 }
+.handoff-summary { margin-bottom: 18px; padding: 16px; border: 1px solid var(--primary); border-radius: 12px; background: var(--bg2); }
+.handoff-summary-header { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.handoff-summary-header h3 { margin-top: 5px; color: var(--text); font-size: 1rem; }
+.handoff-summary-header small { color: var(--muted); font-size: .7rem; }
+.handoff-summary pre { max-height: 320px; overflow: auto; margin: 0; color: var(--muted); font: inherit; font-size: .84rem; line-height: 1.55; white-space: pre-wrap; }
 
 .extraction-results { display: grid; gap: 14px; }
 .extraction-summary { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; color: var(--muted); }

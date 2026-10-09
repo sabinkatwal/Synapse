@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import os
 
 from app.database import init_db
 from app.routes.auth import router as auth_router
@@ -7,6 +8,20 @@ from app.routes.chats import router as chats_router
 from app.routes.memories import router as memories_router
 
 api = FastAPI(title="Synapse API", version="1.0.0")
+
+configured_origins = os.getenv("CORS_ORIGINS", "")
+allowed_origins = [
+    origin.strip()
+    for origin in configured_origins.split(",")
+    if origin.strip()
+]
+allowed_origins.extend(
+    [
+        "chrome-extension://neaficlfbibdhlhkjjakoiijdlfollna",
+        "http://127.0.0.1:4173",
+        "http://localhost:4173",
+    ]
+)
 
 
 @api.on_event("startup")
@@ -30,11 +45,7 @@ api.include_router(memories_router, prefix="/memories", tags=["memories"])
 # CORS headers when an unhandled backend exception produces a 500 response.
 app = CORSMiddleware(
     api,
-    allow_origins=[
-        "chrome-extension://neaficlfbibdhlhkjjakoiijdlfollna",
-        "http://127.0.0.1:4173",
-        "http://localhost:4173",
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

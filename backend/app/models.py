@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -92,6 +92,11 @@ class Chat(Base):
         JSONB,
         nullable=False,
         default=list,
+    )
+
+    handoff_summary: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
     )
 
     favorite: Mapped[bool] = mapped_column(

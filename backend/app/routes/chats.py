@@ -1,10 +1,17 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models import Chat, User
-from app.schemas import ChatCreate, ChatResponse, ChatUpdate
+from app.schemas import ChatCreate, ChatResponse, ChatUpdate, HandoffSummaryResponse
+from app.services.conversation_summarizer import (
+    generate_handoff_summary,
+    render_summary,
+    summary_char_budget,
+)
 
 router = APIRouter()
 
@@ -60,10 +67,38 @@ def update_chat(
         chat.captured_at = payload.captured_at
     if payload.messages is not None:
         chat.messages = [message.model_dump() for message in payload.messages]
+        chat.handoff_summary = None
 
     db.commit()
     db.refresh(chat)
     return chat
+
+
+@router.post("/{chat_id}/handoff-summary", response_model=HandoffSummaryResponse)
+def create_handoff_summary(
+    chat_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> HandoffSummaryResponse:
+    chat = db.query(Chat).filter(Chat.id == chat_id, Chat.user_id == current_user.id).first()
+    if not chat:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat not found")
+
+    try:
+        summary = render_summary(
+            generate_handoff_summary(chat.messages, chat.site),
+            max_chars=summary_char_budget(chat.messages),
+        )
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+    chat.handoff_summary = summary
+    db.commit()
+    return HandoffSummaryResponse(
+        chat_id=chat.id,
+        summary=summary,
+        generated_at=datetime.now(timezone.utc),
+    )
 
 
 @router.delete("/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)

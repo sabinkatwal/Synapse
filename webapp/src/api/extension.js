@@ -73,6 +73,9 @@ function buildPrompt(chat, memories) {
 Relevant memories:
 ${memoryContext}
 
+Conversation handoff summary (use this to continue where the previous agent stopped):
+${chat.handoff_summary || '[No handoff summary has been generated yet.]'}
+
 Archived conversation excerpt (at least 10% of the captured chat):
 <archived-chat>
 ${chatExcerpt || '[No chat text captured.]'}
@@ -85,6 +88,10 @@ export async function extractConversation(chat) {
     method: 'POST',
     body: JSON.stringify({ chat_id: chat.id, limit: 12 }),
   });
+}
+
+export async function generateHandoffSummary(chat) {
+  return fetchJson(`/chats/${chat.id}/handoff-summary`, { method: 'POST' });
 }
 
 export async function pushConversationPrompt(chat, memories) {

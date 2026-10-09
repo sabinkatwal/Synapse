@@ -63,11 +63,18 @@ class ChatResponse(BaseModel):
     url: str
     captured_at: datetime
     messages: list[Message]
+    handoff_summary: str | None
     favorite: bool
     created_at: datetime
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class HandoffSummaryResponse(BaseModel):
+    chat_id: UUID
+    summary: str
+    generated_at: datetime
 
 
 # ---------- Memory ----------

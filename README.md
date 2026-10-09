@@ -20,7 +20,7 @@ Chrome extension  --->  Synapse API  --->  PostgreSQL
         +--> local storage   React dashboard
 ```
 
-The backend is the shared API for the dashboard and extension workflows. Authentication uses bearer tokens. The web dashboard currently expects the API at `http://127.0.0.1:8000`.
+The backend is the shared API for the dashboard and extension workflows. Authentication uses bearer tokens. The web dashboard uses `VITE_API_BASE_URL` in production and falls back to `http://127.0.0.1:8000` locally.
 
 ## Prerequisites
 
@@ -41,6 +41,15 @@ SECRET_KEY=replace-with-a-long-random-value
 ```
 
 `DATABASE_URL` is required when the backend starts. Use a different database username, password, host, or port when your local PostgreSQL installation requires it.
+
+### Deploy with Render
+
+The repository includes [render.yaml](S:/Projects/Synapse/render.yaml), which
+creates the FastAPI API, PostgreSQL database, and static dashboard. In Render,
+choose **New > Blueprint**, connect this repository, and apply the blueprint.
+Enter `GROQ_API_KEY` when Render prompts for the secret value. The blueprint
+uses the default service names `synapse-api` and `synapse-dashboard`; update
+the two `*.onrender.com` URLs in `render.yaml` if you choose different names.
 
 ### 2. Start the backend
 
