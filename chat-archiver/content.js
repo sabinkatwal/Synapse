@@ -7,7 +7,7 @@
   "use strict";
   if (window !== window.top) return;
 
-  const SCRIPT_VERSION = "2026-10-10-chatgpt-turn-container-v4";
+  const SCRIPT_VERSION = "2026-10-10-chatgpt-capture-v7";
 
   // Guard against double injection (manifest + chrome.scripting retry). If the
   // page still has an older copy after the unpacked extension is reloaded, allow
@@ -18,6 +18,9 @@
     /* invalidated context: fall through and re-register */
   }
   window.__SYNAPSE_ARCHIVER__ = SCRIPT_VERSION;
+
+  // Retire the previous copy's message listener so only one copy answers.
+  try { window.__SYNAPSE_CLEANUP__ && window.__SYNAPSE_CLEANUP__(); } catch (_) {}
 
   const LOG = "[SYNAPSE]";
 
@@ -44,6 +47,7 @@
         '[role="main"] article',
         'article[data-message-id]',
         '[data-message-content]',
+        '.thread-scroll-container > *',
         'article',
         "[data-turn]",
         "[data-message-author-role]",
@@ -57,8 +61,8 @@
       strictText: false,
       junk: 'button, svg, sup, form, textarea, [contenteditable="true"], .sr-only, [data-testid*="citation"], [class*="citation"], [data-testid*="feedback"], [data-testid*="copy"], [data-testid*="share"]',
       stop: '[data-testid="stop-button"]',
-      scrollSelector: null, // null = climb from the first turn to the scrollable ancestor
-      diagnose: ["main", "main article", "[data-message-author-role]", "[data-message-id]", ".markdown", ".whitespace-pre-wrap", '[data-message-content]', '[data-testid^="conversation-turn"]', ".sr-only", '[data-testid="stop-button"]', ".katex", "pre", ".cm-content"],
+      scrollSelector: ".thread-scroll-container",
+      diagnose: ["main", "main article", ".thread-scroll-container", ".thread-scroll-container > *", "[data-message-author-role]", "[data-message-id]", ".markdown", ".whitespace-pre-wrap", '[data-message-content]', '[data-testid^="conversation-turn"]', ".sr-only", '[data-testid="stop-button"]', ".katex", "pre", ".cm-content"],
       roleOf: chatgptRoleOf,
       containerOf: chatgptContainerOf,
       postProcess: (t) =>
@@ -180,6 +184,15 @@
     if (role === "user" || /\byou\b|user/.test(role)) return "user";
     if (role === "assistant" || /assistant|chatgpt/.test(role)) return "assistant";
     return null; // never guess
+  }
+
+  function chatgptThreadRole(el, index) {
+    const labels = [el.getAttribute("aria-label") || "", el.className || ""];
+    labels.push(...Array.from(el.querySelectorAll("[aria-label]"), (node) => node.getAttribute("aria-label") || ""));
+    const marker = labels.join(" ").toLowerCase();
+    if (/\b(user|you|human|question)\b/.test(marker)) return "user";
+    if (/\b(assistant|chatgpt|model|response)\b/.test(marker)) return "assistant";
+    return index % 2 === 0 ? "user" : "assistant";
   }
 
   function roleOf(el) {
@@ -325,6 +338,22 @@
       items.push({ key: stableId(el) || "h:" + hash(role + "\u0001" + text), role, text });
     }
     if (!items.length && cfg.site === "chatgpt") {
+      const thread = document.querySelector(".thread-scroll-container");
+      const threadEls = thread
+        ? Array.from(thread.children).filter((el) => (el.textContent || "").replace(/\s+/g, " ").trim().length >= 2)
+        : [];
+      if (threadEls.length) {
+        const seen = new Set();
+        threadEls.forEach((el, index) => {
+          const text = cfg.postProcess(serialize(el, cfg.junk, false));
+          if (!text || text.length < 2 || seen.has(text)) return;
+          seen.add(text);
+          const role = chatgptRoleOf(el) || chatgptThreadRole(el, index);
+          items.push({ key: stableId(el) || "h:" + hash(role + "\u0001" + text), role, text });
+        });
+      }
+    }
+    if (!items.length && cfg.site === "chatgpt") {
       const fallbackEls = outermost(
         Array.from(
           document.querySelectorAll(
@@ -415,6 +444,11 @@
     return new Promise((resolve) => {
       let timer;
       let done = false;
+      const isVisible = (el) => {
+        if (!el) return false;
+        const style = getComputedStyle(el);
+        return style.display !== "none" && style.visibility !== "hidden" && el.getClientRects().length > 0;
+      };
       const finish = () => {
         if (done) return;
         done = true;
@@ -423,7 +457,7 @@
       };
       const check = () => {
         clearTimeout(timer);
-        if (cfg.stop && document.querySelector(cfg.stop)) return; // still streaming
+        if (cfg.stop && Array.from(document.querySelectorAll(cfg.stop)).some(isVisible)) return; // still streaming
         timer = setTimeout(finish, 600); // DOM stable for 600ms
       };
       const obs = new MutationObserver(check);
@@ -577,14 +611,26 @@
   // ---- inject --------------------------------------------------------------------------------------
   function setEditableText(el, text) {
     el.focus();
-    document.execCommand("selectAll", false, null);
-    document.execCommand("delete", false, null);
-    const lines = text.split("\n");
-    lines.forEach((line, i) => {
-      document.execCommand("insertText", false, line);
-      if (i < lines.length - 1) document.execCommand("insertParagraph", false, null);
-    });
-    el.dispatchEvent(new Event("input", { bubbles: true }));
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.execCommand("insertText", false, text);
+    el.dispatchEvent(new InputEvent("input", {
+      bubbles: true,
+      inputType: "insertText",
+      data: text,
+    }));
+
+    if (!el.innerText.includes(text)) {
+      el.textContent = text;
+      el.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        inputType: "insertText",
+        data: text,
+      }));
+    }
   }
 
   function setTextareaText(el, text) {
@@ -594,13 +640,18 @@
   }
 
   async function injectPrompt(text, autoSubmit) {
-    const input = document.querySelector(cfg.inputSelector);
+    const deadline = Date.now() + 2000;
+    let input;
+    while (!input && Date.now() < deadline) {
+      input = document.querySelector(cfg.inputSelector);
+      if (!input) await sleep(50);
+    }
     if (!input) return { ok: false, error: "Input box not found on this page." };
     if (input.tagName === "TEXTAREA") setTextareaText(input, text);
     else setEditableText(input, text);
 
     if (autoSubmit) {
-      await sleep(150);
+      await sleep(50);
       const btn = document.querySelector(cfg.submitSelector);
       if (btn && !btn.disabled) btn.click();
       else input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
@@ -609,7 +660,7 @@
   }
 
   // ---- message bridge ---------------------------------------------------------------------------------
-  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  function handler(msg, sender, sendResponse) {
     if (!msg || typeof msg.type !== "string") return;
 
     if (msg.type === "CAPTURE_CHAT" || msg.type === "CAPTURE_CHAT_V2" || msg.type === "CAPTURE_CHAT_V4") {
@@ -633,5 +684,10 @@
     if (msg.type === "PING") {
       sendResponse({ ok: true, site: cfg.site, diagnostics: msg.diagnose ? diagnostics() : undefined });
     }
-  });
+  }
+
+  chrome.runtime.onMessage.addListener(handler);
+  window.__SYNAPSE_CLEANUP__ = () => {
+    try { chrome.runtime.onMessage.removeListener(handler); } catch (_) {}
+  };
 })();

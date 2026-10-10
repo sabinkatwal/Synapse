@@ -13,6 +13,20 @@ const supportedHosts = new Set([
 ]);
 let activeTabId = null;
 
+async function loadPendingPrompt() {
+  const { pendingPrompt } = await chrome.storage.local.get("pendingPrompt");
+  if (pendingPrompt && !promptEl.value.trim()) {
+    promptEl.value = pendingPrompt;
+    showMessage("Prompt received from Synapse.", true);
+  }
+}
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || !changes.pendingPrompt?.newValue || promptEl.value.trim()) return;
+  promptEl.value = changes.pendingPrompt.newValue;
+  showMessage("Prompt received from Synapse.", true);
+});
+
 function showMessage(text, ok = false) {
   msg.textContent = text;
   msg.style.color = ok ? "#82e6a8" : "#ff8a8a";
@@ -86,6 +100,7 @@ async function inject() {
     });
     if (!result || !result.ok) throw new Error(result?.error || "Injection failed.");
     promptEl.value = "";
+    await chrome.storage.local.remove("pendingPrompt");
     showMessage("Prompt injected.", true);
   } catch (error) {
     showMessage(error.message || String(error));
@@ -123,3 +138,4 @@ document.getElementById("openPanel").addEventListener("click", async () => {
 });
 
 init();
+loadPendingPrompt();
