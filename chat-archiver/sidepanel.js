@@ -279,7 +279,7 @@ captureBtn.addEventListener("click", async () => {
   captureBtn.disabled = true;
   setMsg(captureMsgEl, "Capturing… long chats take a while because every message is loaded first.", true, true);
   try {
-    let res = await sendToTab(activeTabId, { type: "CAPTURE_CHAT_V2" });
+    let res = await sendToTab(activeTabId, { type: "CAPTURE_CHAT_V4" });
 
     if (res && res.duplicate) {
       const ex = res.existing || {};
@@ -289,9 +289,9 @@ captureBtn.addEventListener("click", async () => {
           "OK = replace the old copy with this new capture.\nCancel = don't replace."
       );
       if (replace) {
-        res = await sendToTab(activeTabId, { type: "CAPTURE_CHAT_V2", mode: "replace", reuse: true });
+        res = await sendToTab(activeTabId, { type: "CAPTURE_CHAT_V4", mode: "replace", reuse: true });
       } else if (confirm("Save it as an additional copy instead?")) {
-        res = await sendToTab(activeTabId, { type: "CAPTURE_CHAT_V2", mode: "duplicate", reuse: true });
+        res = await sendToTab(activeTabId, { type: "CAPTURE_CHAT_V4", mode: "duplicate", reuse: true });
       } else {
         setMsg(captureMsgEl, "Not saved (already archived).", true);
         return;

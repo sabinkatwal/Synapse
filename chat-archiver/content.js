@@ -162,7 +162,10 @@
         if (/^chatgpt said/.test(t)) { role = "assistant"; break; }
       }
     }
-    return role === "user" || role === "assistant" ? role : null; // never guess
+    role = role ? String(role).trim().toLowerCase() : "";
+    if (role === "user" || /\byou\b|user/.test(role)) return "user";
+    if (role === "assistant" || /assistant|chatgpt/.test(role)) return "assistant";
+    return null; // never guess
   }
 
   function roleOf(el) {
@@ -307,6 +310,17 @@
       if (!text) continue;
       items.push({ key: stableId(el) || "h:" + hash(role + "\u0001" + text), role, text });
     }
+    if (!items.length && cfg.site === "chatgpt") {
+      const fallbackEls = outermost(Array.from(document.querySelectorAll("main article, main [data-message-id]")));
+      const seen = new Set();
+      for (const el of fallbackEls) {
+        const text = cfg.postProcess ? cfg.postProcess(serialize(el, cfg.junk, false)) : serialize(el, cfg.junk, false);
+        if (!text || text.length < 2 || seen.has(text)) continue;
+        seen.add(text);
+        const role = items.length % 2 === 0 ? "user" : "assistant";
+        items.push({ key: stableId(el) || "h:" + hash(role + "\u0001" + text), role, text });
+      }
+    }
     return items;
   }
 
@@ -344,6 +358,7 @@
     cfg.diagnose.forEach((s) => (d.other[s] = count(s)));
     const { selector, elements } = findTurns();
     d.winningSelector = selector;
+    d.fallbackCandidates = count("main article, main [data-message-id]");
     elements.forEach((el) => {
       const r = roleOf(el) || "unknown";
       d.roles[r] = (d.roles[r] || 0) + 1;
@@ -570,7 +585,7 @@
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (!msg || typeof msg.type !== "string") return;
 
-    if (msg.type === "CAPTURE_CHAT" || msg.type === "CAPTURE_CHAT_V2") {
+    if (msg.type === "CAPTURE_CHAT" || msg.type === "CAPTURE_CHAT_V2" || msg.type === "CAPTURE_CHAT_V4") {
       saveCapture({ mode: msg.mode, reuse: msg.reuse })
         .then(sendResponse)
         .catch((err) => {
