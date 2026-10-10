@@ -3,27 +3,44 @@
 // Captures conversation turns into chrome.storage.local and can inject a prompt into the page's input box.
 
 (function () {
+  if (window !== window.top) return;
+
   const host = location.hostname;
 
   // ---- Per-site config ------------------------------------------------
   const CONFIGS = {
     "chatgpt.com": {
       site: "chatgpt",
-      // Updated: OpenAI now uses article[data-testid^="conversation-turn-"]
-      // wrapping a div[data-message-author-role]. Keep both old + new as fallback list.
-      turnSelector:
-        'article[data-testid^="conversation-turn-"], [data-testid^="conversation-turn-"], div[data-message-author-role]',
+      roleSelector: "[data-message-author-role]",
+      articleSelector: 'article[data-testid^="conversation-turn"]',
       roleOf(turnEl) {
-        const roleEl = turnEl.hasAttribute("data-message-author-role")
+        const roleEl = turnEl.matches("[data-message-author-role]")
           ? turnEl
           : turnEl.querySelector("[data-message-author-role]");
-        return roleEl ? roleEl.getAttribute("data-message-author-role") : "unknown";
+        return roleEl?.getAttribute("data-message-author-role") || "unknown";
       },
       textOf(turnEl) {
-        const roleEl = turnEl.hasAttribute("data-message-author-role")
+        const roleEl = turnEl.matches("[data-message-author-role]")
           ? turnEl
           : turnEl.querySelector("[data-message-author-role]");
-        return (roleEl || turnEl).innerText.trim();
+        const role = roleEl?.getAttribute("data-message-author-role");
+        const contentRoot = roleEl || turnEl;
+        const body =
+          contentRoot.querySelector(
+            role === "assistant" ? ".markdown" : ".whitespace-pre-wrap"
+          ) || contentRoot;
+        const clone = body.cloneNode(true);
+        clone
+          .querySelectorAll(
+            'button, svg, sup, .sr-only, [data-testid*="citation"], [aria-hidden="true"]'
+          )
+          .forEach((el) => el.remove());
+        const text = (clone.innerText || clone.textContent || "").trim();
+        const withoutAttachmentPlaceholder = text
+          .replace(/#attachment:\s*Pasted text\s*#\d+/gi, "")
+          .replace(/\n{2,}/g, "\n")
+          .trim();
+        return withoutAttachmentPlaceholder || text;
       },
       inputSelector: '#prompt-textarea, div[contenteditable="true"]',
       submitSelector: 'button[data-testid="send-button"], button[aria-label="Send prompt"]',
@@ -60,33 +77,39 @@
   if (!config) return;
 
   // ---- Capture ----------------------------------------------------------
-  function captureConversation() {
-    let turns = Array.from(document.querySelectorAll(config.turnSelector));
-
-    // De-dupe: new ChatGPT selector list can match nested elements twice.
-    turns = turns.filter((el, i) => !turns.slice(0, i).some((prev) => prev.contains(el)));
-
-    let messages = [];
-    if (turns.length > 0) {
-      messages = turns
-        .map((t) => {
-          const role = config.roleOf(t);
-          const text = config.textOf(t);
-          return { role, text };
-        })
-        .filter((m) => m.text && m.text.length > 0);
+  function getTurns() {
+    if (config.site !== "chatgpt") {
+      return Array.from(document.querySelectorAll(config.turnSelector));
     }
 
-    if (messages.length === 0) {
-      console.warn(
-        `[Chat Archiver] turnSelector "${config.turnSelector}" matched 0 usable messages on ${host}. Site DOM may have changed. Falling back to full-page text capture.`
+    const roleTurns = Array.from(document.querySelectorAll(config.roleSelector));
+    return roleTurns.length
+      ? roleTurns
+      : Array.from(document.querySelectorAll(config.articleSelector));
+  }
+
+  async function waitForChatGPTMessages() {
+    if (config.site !== "chatgpt") return getTurns();
+
+    const deadline = Date.now() + 5000;
+    let turns = getTurns();
+    while (turns.length === 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      turns = getTurns();
+    }
+    return turns;
+  }
+
+  async function captureConversation() {
+    const turns = await waitForChatGPTMessages();
+    if (config.site === "chatgpt" && turns.length === 0) {
+      console.warn("[Chat Archiver] ChatGPT message elements were not found.");
+    }
+    const messages = turns
+      .map((turn) => ({ role: config.roleOf(turn), text: config.textOf(turn) }))
+      .filter((message) =>
+        ["user", "assistant"].includes(message.role) && message.text.length > 0
       );
-      const main = document.querySelector("main") || document.body;
-      const text = main.innerText.trim();
-      if (text) {
-        messages = [{ role: "unknown", text }];
-      }
-    }
 
     return {
       site: config.site,
@@ -97,8 +120,41 @@
     };
   }
 
+  function waitForChatGPTResponseComplete() {
+    if (config.site !== "chatgpt") return Promise.resolve();
+
+    const stopSelector =
+      '[data-testid="stop-button"], button[aria-label*="Stop"], button[title*="Stop"]';
+    return new Promise((resolve) => {
+      let stableTimer;
+      const observer = new MutationObserver(check);
+      const timeout = setTimeout(finish, 30000);
+
+      function finish() {
+        clearTimeout(stableTimer);
+        clearTimeout(timeout);
+        observer.disconnect();
+        resolve();
+      }
+
+      function check() {
+        if (document.querySelector(stopSelector)) {
+          clearTimeout(stableTimer);
+          stableTimer = undefined;
+          return;
+        }
+        clearTimeout(stableTimer);
+        stableTimer = setTimeout(finish, 250);
+      }
+
+      observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+      check();
+    });
+  }
+
   async function saveCapture() {
-    const convo = captureConversation();
+    await waitForChatGPTResponseComplete();
+    const convo = await captureConversation();
     if (convo.messages.length === 0) {
       return { ok: false, error: "No messages found on this page." };
     }
