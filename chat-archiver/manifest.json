@@ -6,6 +6,7 @@
   "permissions": ["storage", "activeTab", "scripting", "sidePanel"],
   "host_permissions": [
     "https://chatgpt.com/*",
+    "https://www.chatgpt.com/*",
     "https://chat.openai.com/*",
     "https://claude.ai/*",
     "https://gemini.google.com/*",
@@ -35,6 +36,7 @@
     {
       "matches": [
         "https://chatgpt.com/*",
+        "https://www.chatgpt.com/*",
         "https://chat.openai.com/*",
         "https://claude.ai/*",
         "https://gemini.google.com/*"

@@ -5,16 +5,30 @@
     <title>Synapse</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <style>
-      body { margin: 0; padding: 14px; width: 220px; font: 13px system-ui, sans-serif; background: #0f1115; color: #e8eaf0; }
+      body { margin: 0; padding: 14px; width: 260px; font: 13px system-ui, sans-serif; background: #0f1115; color: #e8eaf0; }
       h1 { font-size: 15px; margin: 0 0 10px; }
+      h2 { font-size: 11px; margin: 14px 0 6px; color: #aeb5c7; text-transform: uppercase; letter-spacing: .06em; }
       button { width: 100%; padding: 9px 10px; border: 0; border-radius: 8px; background: #6c5ce7; color: #fff; font-size: 13px; cursor: pointer; }
       button:hover { background: #5b4bd6; }
+      button:disabled { opacity: .5; cursor: default; }
+      textarea { width: 100%; min-height: 64px; box-sizing: border-box; resize: vertical; padding: 8px; border: 1px solid #303644; border-radius: 7px; background: #181c24; color: #e8eaf0; font: inherit; }
+      label { display: block; margin: 7px 0; color: #aeb5c7; font-size: 12px; }
+      input { vertical-align: middle; }
+      .secondary { margin-top: 8px; background: #252b38; }
       #msg { margin-top: 8px; min-height: 16px; font-size: 12px; color: #ff8a8a; }
+      #siteStatus { color: #8e98ad; font-size: 11px; }
     </style>
   </head>
   <body>
     <h1>⚡ Synapse</h1>
-    <button id="openPanel">Open side panel</button>
+    <div id="siteStatus">Checking active tab…</div>
+    <h2>Capture</h2>
+    <button id="capture">Capture conversation</button>
+    <h2>Inject prompt</h2>
+    <textarea id="prompt" placeholder="Type a prompt to inject..."></textarea>
+    <label><input type="checkbox" id="autoSubmit" checked /> Auto-submit after inserting</label>
+    <button id="inject">Inject prompt</button>
+    <button id="openPanel" class="secondary">Open side panel</button>
     <div id="msg"></div>
     <script src="popup.js"></script>
   </body>

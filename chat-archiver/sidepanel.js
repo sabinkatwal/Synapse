@@ -1,6 +1,12 @@
 // SYNAPSE side panel. Requires api.js (loaded before this file in sidepanel.html).
 
-const SUPPORTED_HOSTS = ["chatgpt.com", "chat.openai.com", "claude.ai", "gemini.google.com"];
+const SUPPORTED_HOSTS = [
+  "chatgpt.com",
+  "www.chatgpt.com",
+  "chat.openai.com",
+  "claude.ai",
+  "gemini.google.com",
+];
 
 // ============================================================
 // Theme Management

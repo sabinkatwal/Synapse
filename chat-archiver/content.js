@@ -29,8 +29,9 @@
     chatgpt: {
       site: "chatgpt",
       label: "ChatGPT",
-      hosts: ["chatgpt.com", "chat.openai.com"],
+      hosts: ["chatgpt.com", "www.chatgpt.com", "chat.openai.com"],
       turns: [
+        '[data-message-author-role="user"], [data-message-author-role="assistant"]',
         '[data-testid^="conversation-turn"]',
         '[data-testid*="conversation-turn"]',
         'article[data-testid^="conversation-turn"]',
@@ -39,6 +40,11 @@
         'main [data-message-author-role]',
         'main [data-message-id]',
         'main article',
+        '[role="main"] [data-message-id]',
+        '[role="main"] article',
+        'article[data-message-id]',
+        '[data-message-content]',
+        'article',
         "[data-turn]",
         "[data-message-author-role]",
         "article:has(.markdown), article:has(.whitespace-pre-wrap), section:has(.markdown), section:has(.whitespace-pre-wrap)",
@@ -109,6 +115,11 @@
       return text.length > Math.max(10, roleText.length + 10);
     };
 
+    // In current ChatGPT builds the role attribute is on the message
+    // container itself. Keep that node instead of climbing to an article that
+    // may contain several turns.
+    if (el.matches("[data-message-author-role]")) return el;
+
     const stableCandidates = [
       el.closest('[data-testid^="conversation-turn"]') ||
         el.closest('[data-testid*="conversation-turn"]'),
@@ -156,6 +167,9 @@
     if (!role) {
       const labelled = el.matches("[aria-label]") ? [el] : [];
       labelled.push(...el.querySelectorAll("[aria-label]"));
+      for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+        if (p.hasAttribute("aria-label")) labelled.push(p);
+      }
       for (const node of labelled) {
         const t = (node.getAttribute("aria-label") || "").trim().toLowerCase();
         if (/^you said/.test(t)) { role = "user"; break; }
@@ -311,10 +325,23 @@
       items.push({ key: stableId(el) || "h:" + hash(role + "\u0001" + text), role, text });
     }
     if (!items.length && cfg.site === "chatgpt") {
-      const fallbackEls = outermost(Array.from(document.querySelectorAll("main article, main [data-message-id]")));
+      const fallbackEls = outermost(
+        Array.from(
+          document.querySelectorAll(
+            'main article, [role="main"] article, article[data-message-id], article'
+              + ', [data-message-content], main .whitespace-pre-wrap, [role="main"] .whitespace-pre-wrap'
+          )
+        ).filter(
+          (el) =>
+            el.matches(".markdown, .prose, .whitespace-pre-wrap, [data-message-content]") ||
+            el.querySelector(".markdown, .prose, .whitespace-pre-wrap, [data-message-content]")
+        )
+      );
       const seen = new Set();
       for (const el of fallbackEls) {
-        const text = cfg.postProcess ? cfg.postProcess(serialize(el, cfg.junk, false)) : serialize(el, cfg.junk, false);
+        const text = cfg.postProcess
+          ? cfg.postProcess(serialize(el, cfg.junk, false))
+          : serialize(el, cfg.junk, false);
         if (!text || text.length < 2 || seen.has(text)) continue;
         seen.add(text);
         const role = items.length % 2 === 0 ? "user" : "assistant";
