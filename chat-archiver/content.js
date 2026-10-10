@@ -7,7 +7,7 @@
   "use strict";
   if (window !== window.top) return;
 
-  const SCRIPT_VERSION = "2026-10-10-chatgpt-capture-v7";
+  const SCRIPT_VERSION = "2026-10-10-chatgpt-capture-v9";
 
   // Guard against double injection (manifest + chrome.scripting retry). If the
   // page still has an older copy after the unpacked extension is reloaded, allow
@@ -53,10 +53,11 @@
         "[data-message-author-role]",
         "article:has(.markdown), article:has(.whitespace-pre-wrap), section:has(.markdown), section:has(.whitespace-pre-wrap)",
       ],
-      // Prefer stable message-body selectors; fall back to the scoped turn if ChatGPT renames them.
+      // Narrow selectors only. When nothing matches, extractText falls back to
+      // the whole message element (the new ChatGPT renderer has no .markdown).
       textSelectors: {
-        assistant: '.markdown, [data-message-content], [class*="markdown"], .prose',
-        user: '.whitespace-pre-wrap, [data-message-content], [class*="whitespace-pre-wrap"]',
+        assistant: ".markdown, [data-message-content]",
+        user: ".whitespace-pre-wrap, [data-message-content]",
       },
       strictText: false,
       junk: 'button, svg, sup, form, textarea, [contenteditable="true"], .sr-only, [data-testid*="citation"], [class*="citation"], [data-testid*="feedback"], [data-testid*="copy"], [data-testid*="share"]',
@@ -427,6 +428,7 @@
     return d;
   }
   window.__synapseDiagnose = diagnostics; // run from DevTools with the extension context selected
+  window.__synapseHarvest = harvest;      // DevTools: see exactly what would be captured right now
 
   // ---- progress to the side panel -------------------------------------------------
   let lastProgress = 0;
@@ -475,23 +477,79 @@
     }
   }
 
+  // ---- conversation identity (stops cross-chat captures) ------------------------------
+  const norm = (s) => (s || "").replace(/\s+/g, " ").trim().toLowerCase();
+
+  function convoId() {
+    const m = location.pathname.match(/\/c\/([0-9a-f-]{8,})/i);
+    return m ? m[1] : null;
+  }
+
+  // Title of this conversation as shown in the sidebar list (null if not found).
+  function sidebarTitle(id) {
+    const a = document.querySelector(`a[href$="/c/${id}"], a[href*="/c/${id}?"]`);
+    const t = a ? norm(a.textContent) : "";
+    return t || null;
+  }
+
+  function headerCheck() {
+    if (cfg.site !== "chatgpt") return { ok: true, id: location.pathname, title: document.title };
+    const id = convoId();
+    if (!id) return { ok: false, reason: "this page has no /c/<id> in the URL, so it isn't a saved conversation" };
+    const doc = norm(document.title);
+    const side = sidebarTitle(id);
+    if (side === null) return { ok: true, id, title: document.title, verified: false }; // sidebar hidden
+    const match = doc && (doc.includes(side) || side.includes(doc));
+    return match
+      ? { ok: true, id, title: document.title, verified: true }
+      : { ok: false, id, reason: `the tab title "${document.title}" does not match the sidebar title "${side}"` };
+  }
+  window.__synapseHeader = headerCheck; // DevTools: should return ok:true, verified:true
+
+  async function waitForHeaderMatch(ms) {
+    const deadline = Date.now() + ms;
+    let last = headerCheck();
+    while (!last.ok && Date.now() < deadline) { await sleep(300); last = headerCheck(); }
+    return last;
+  }
+
+  function assertSame(startId) {
+    const now = cfg.site === "chatgpt" ? convoId() : location.pathname;
+    if (now !== startId) throw new Error("You switched conversations during capture. Nothing was saved. Try again.");
+  }
+
+  // ---- expand collapsed messages ("Show more") --------------------------------------------
+  function expandCollapsed() {
+    let clicked = 0;
+    document.querySelectorAll('button[aria-expanded="false"]').forEach((b) => {
+      const label = (b.textContent || "").trim().toLowerCase();
+      if (!/^show more\b|^read more\b|^expand\b/.test(label)) return;
+      if (!b.closest("[data-message-author-role], [data-turn]")) return; // only inside messages
+      try { b.click(); clicked++; } catch (_) {}
+    });
+    return clicked;
+  }
+
   // ---- load the whole conversation ------------------------------------------------------
+  // Picks the scrollable ancestor with the LARGEST scroll range (the real chat
+  // scroller), not merely the nearest one, which can be a small inner element.
   function findScrollContainer(startEl) {
-    const isScrollable = (el) => {
+    const scrollable = (el) => {
       const oy = getComputedStyle(el).overflowY;
-      return (oy === "auto" || oy === "scroll" || oy === "overlay") && el.scrollHeight > el.clientHeight + 4;
+      return /auto|scroll|overlay/.test(oy) && el.scrollHeight > el.clientHeight + 4;
     };
     if (cfg.scrollSelector) {
       const hinted = document.querySelector(cfg.scrollSelector);
-      if (hinted && isScrollable(hinted)) return hinted;
+      if (hinted && scrollable(hinted)) return hinted;
     }
+    let best = null;
     for (let el = startEl && startEl.parentElement; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
-      if (isScrollable(el)) return el;
+      if (scrollable(el) && (!best || el.scrollHeight - el.clientHeight > best.scrollHeight - best.clientHeight)) best = el;
     }
-    return document.scrollingElement || document.documentElement;
+    return best || document.scrollingElement || document.documentElement;
   }
 
-  async function collectAll() {
+  async function collectAll(startId) {
     const first0 = findTurns().elements[0];
     if (!first0) return [];
     const box = findScrollContainer(first0);
@@ -501,6 +559,7 @@
       // Phase 1: scroll to the top until turn count and scrollHeight are stable x3.
       let stable = 0, lastCount = -1, lastHeight = -1;
       for (let i = 0; i < 60 && stable < 3; i++) {
+        assertSame(startId);
         box.scrollTop = 0;
         await sleep(i < 2 ? 500 : 700);
         const n = findTurns().elements.length;
@@ -510,36 +569,40 @@
         progress(`Loading older messages… (${n} turns in view)`);
       }
 
-      // Phase 2: is the list virtualized? Jump to the bottom and see whether
-      // the first turn we saw at the top was removed from the DOM.
-      const topFirst = findTurns().elements[0];
-      box.scrollTop = box.scrollHeight;
-      await sleep(600);
-      const virtualized = !!topFirst && !topFirst.isConnected;
-
-      if (!virtualized) {
-        progress("Reading messages…", true);
-        return harvest();
-      }
-
-      // Phase 3 (virtualized): sweep top -> bottom in steps, accumulating turns.
-      console.info(LOG, "virtualized list detected; sweeping");
+      // Phase 2: ALWAYS sweep top -> bottom in overlapping steps, accumulating
+      // turns. ChatGPT may unload off-screen messages without removing the first
+      // turn node, so "is it virtualized?" detection is not reliable.
+      console.info(LOG, "sweeping conversation");
       box.scrollTop = 0;
       await sleep(500);
-      const step = Math.max(200, Math.floor((box.clientHeight || window.innerHeight) * 0.8));
-      let acc = [];
-      for (let guard = 0; guard < 800; guard++) {
+      const step = Math.max(200, Math.floor((box.clientHeight || window.innerHeight) * 0.6));
+      let acc = [], stalls = 0;
+      const t0 = Date.now();
+      for (let guard = 0; guard < 800 && Date.now() - t0 < 180000; guard++) {
+        assertSame(startId);
+        if (expandCollapsed()) await sleep(250); // let expanded text render
         acc = mergeItems(acc, harvest());
-        progress(`Collecting messages… (${acc.length} so far)`);
         const maxTop = box.scrollHeight - box.clientHeight;
+        progress(`Collecting messages… (${acc.length} so far, scroll ${Math.round(box.scrollTop)}/${Math.round(maxTop)})`);
         if (box.scrollTop >= maxTop - 2) {
           await sleep(350); // let late renders / height re-measurement settle
+          if (expandCollapsed()) await sleep(250);
           acc = mergeItems(acc, harvest());
           if (box.scrollHeight - box.clientHeight <= box.scrollTop + 2) break;
           continue;
         }
-        box.scrollTop = Math.min(box.scrollTop + step, maxTop);
-        await sleep(180);
+        const before = box.scrollTop;
+        box.scrollTop = Math.min(before + step, maxTop);
+        await sleep(350);
+        if (Math.abs(box.scrollTop - before) < 1) {
+          // Scroller didn't move: nudge by scrolling the last visible turn into view.
+          stalls++;
+          const els = findTurns().elements;
+          const last = els[els.length - 1];
+          if (last) last.scrollIntoView({ block: "start" });
+          await sleep(350);
+          if (stalls >= 6) break;
+        } else stalls = 0;
       }
       return acc;
     } finally {
@@ -560,10 +623,25 @@
       if (opts && opts.reuse && lastCapture && lastCapture.url === location.href && Date.now() - lastCapture.at < 120000) {
         convo = lastCapture.convo;
       } else {
+        progress("Checking conversation…", true);
+        const head = await waitForHeaderMatch(6000);
+        if (!head.ok) {
+          return { ok: false, error: `Capture stopped: ${head.reason}. Wait for the chat to finish loading and try again.` };
+        }
+        const startId = head.id;
+        if (head.verified === false) console.warn(LOG, "Sidebar title not found; verified by URL id only.");
+
         progress("Waiting for the response to finish…", true);
         await waitForIdle();
         await waitForTurns(5000);
-        const items = await collectAll();
+        const items = await collectAll(startId);
+
+        // Re-check after the sweep, right before saving.
+        const end = headerCheck();
+        if (!end.ok || end.id !== startId) {
+          return { ok: false, error: "The conversation changed while capturing. Nothing was saved. Try again." };
+        }
+
         if (!items.length) {
           const diag = diagnostics();
           console.warn(LOG, `${cfg.label} messages were not found. Selector diagnostics:`, diag);
@@ -611,26 +689,14 @@
   // ---- inject --------------------------------------------------------------------------------------
   function setEditableText(el, text) {
     el.focus();
-    const selection = window.getSelection();
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    selection.removeAllRanges();
-    selection.addRange(range);
-    document.execCommand("insertText", false, text);
-    el.dispatchEvent(new InputEvent("input", {
-      bubbles: true,
-      inputType: "insertText",
-      data: text,
-    }));
-
-    if (!el.innerText.includes(text)) {
-      el.textContent = text;
-      el.dispatchEvent(new InputEvent("input", {
-        bubbles: true,
-        inputType: "insertText",
-        data: text,
-      }));
-    }
+    document.execCommand("selectAll", false, null);
+    document.execCommand("delete", false, null);
+    const lines = text.split("\n");
+    lines.forEach((line, i) => {
+      document.execCommand("insertText", false, line);
+      if (i < lines.length - 1) document.execCommand("insertParagraph", false, null);
+    });
+    el.dispatchEvent(new Event("input", { bubbles: true }));
   }
 
   function setTextareaText(el, text) {
@@ -640,18 +706,13 @@
   }
 
   async function injectPrompt(text, autoSubmit) {
-    const deadline = Date.now() + 2000;
-    let input;
-    while (!input && Date.now() < deadline) {
-      input = document.querySelector(cfg.inputSelector);
-      if (!input) await sleep(50);
-    }
+    const input = document.querySelector(cfg.inputSelector);
     if (!input) return { ok: false, error: "Input box not found on this page." };
     if (input.tagName === "TEXTAREA") setTextareaText(input, text);
     else setEditableText(input, text);
 
     if (autoSubmit) {
-      await sleep(50);
+      await sleep(150);
       const btn = document.querySelector(cfg.submitSelector);
       if (btn && !btn.disabled) btn.click();
       else input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
