@@ -1,5 +1,6 @@
+// SYNAPSE side panel. Requires api.js (loaded before this file in sidepanel.html).
+
 const SUPPORTED_HOSTS = ["chatgpt.com", "chat.openai.com", "claude.ai", "gemini.google.com"];
-const API_BASE_URL = "https://synapse-wqm8.onrender.com";
 
 // ============================================================
 // Theme Management
@@ -12,31 +13,24 @@ const LIGHT_THEME = "light";
 function initTheme() {
   const themeLink = document.getElementById("themeLink");
   const themeToggle = document.getElementById("themeToggle");
-  
-  // Get saved theme or use system preference
+
   let savedTheme = localStorage.getItem(THEME_KEY);
-  
   if (!savedTheme) {
-    // Use system preference
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     savedTheme = prefersDark ? DARK_THEME : LIGHT_THEME;
   }
-  
   applyTheme(savedTheme, themeLink, themeToggle);
-  
-  // Listen for theme toggle
+
   themeToggle.addEventListener("click", () => {
     const currentTheme = themeLink.href.includes("dark") ? DARK_THEME : LIGHT_THEME;
     const newTheme = currentTheme === DARK_THEME ? LIGHT_THEME : DARK_THEME;
     applyTheme(newTheme, themeLink, themeToggle);
     localStorage.setItem(THEME_KEY, newTheme);
   });
-  
-  // Listen for system theme changes
+
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
     if (!localStorage.getItem(THEME_KEY)) {
-      const newTheme = e.matches ? DARK_THEME : LIGHT_THEME;
-      applyTheme(newTheme, themeLink, themeToggle);
+      applyTheme(e.matches ? DARK_THEME : LIGHT_THEME, themeLink, themeToggle);
     }
   });
 }
@@ -48,7 +42,6 @@ function applyTheme(theme, themeLink, themeToggle) {
   themeToggle.title = isDark ? "Switch to light mode" : "Switch to dark mode";
 }
 
-// Initialize theme when DOM is ready
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", initTheme);
 } else {
@@ -58,6 +51,7 @@ if (document.readyState === "loading") {
 // ============================================================
 
 const siteStatusEl = document.getElementById("siteStatus");
+const serverStateEl = document.getElementById("serverState");
 const captureBtn = document.getElementById("captureBtn");
 const captureMsgEl = document.getElementById("captureMsg");
 const injectBtn = document.getElementById("injectBtn");
@@ -93,36 +87,57 @@ async function getStoredEmail() {
   return userEmail || null;
 }
 
-async function apiRequest(path, options = {}) {
-  const token = await getAuthToken();
-  const headers = {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(options.headers || {}),
-  };
-  const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(errorText || `Request failed: ${res.status}`);
-  }
-  if (res.status === 204) return null;
-  return res.json();
+// ---- server "waking up" state (Render cold start) --------------------------
+function showServerState(text) {
+  serverStateEl.textContent = text;
+  serverStateEl.style.display = text ? "block" : "none";
+}
+const apiHooks = {
+  onWaking: () =>
+    showServerState("Server is waking up (free-tier cold start). This can take up to a minute…"),
+  onAwake: () => showServerState(""),
+};
+function apiRequest(path, options = {}) {
+  return synapseFetch(path, options, apiHooks);
 }
 
-function setMsg(el, text, ok) {
+// The background worker reports its own slow requests (saves), and the content
+// script reports capture progress.
+chrome.runtime.onMessage.addListener((msg) => {
+  if (!msg) return;
+  if (msg.type === "SERVER_WAKING") {
+    apiHooks[msg.waking ? "onWaking" : "onAwake"]();
+  } else if (msg.type === "CAPTURE_PROGRESS" && captureBtn.disabled) {
+    setMsg(captureMsgEl, msg.text, true, true);
+  }
+});
+
+// ---- message helper (timer per element so old timeouts can't wipe new text) --
+const msgTimers = new WeakMap();
+function setMsg(el, text, ok, sticky = false) {
+  clearTimeout(msgTimers.get(el));
   el.textContent = text;
   el.classList.remove("ok", "err");
-  el.classList.add(ok ? "ok" : "err");
-  setTimeout(() => {
-    el.textContent = "";
-    el.classList.remove("ok", "err");
-  }, 4000);
+  if (text) el.classList.add(ok ? "ok" : "err");
+  if (text && !sticky) {
+    msgTimers.set(
+      el,
+      setTimeout(() => {
+        el.textContent = "";
+        el.classList.remove("ok", "err");
+      }, 6000)
+    );
+  }
+}
+
+function h(tag, className, text) {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (text !== undefined) el.textContent = text;
+  return el;
 }
 
 // ---- Active tab tracking ------------------------------------------------
-// Unlike a popup (which re-runs init() fresh every time it's opened), the
-// side panel stays mounted while the user switches tabs. Re-check the
-// active tab whenever it changes so siteStatus/capture/inject stay correct.
 async function refreshActiveTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !tab.url) {
@@ -147,23 +162,47 @@ async function refreshActiveTab() {
   if (siteSupported) {
     siteStatusEl.textContent = `Connected: ${hostname}`;
     siteStatusEl.classList.add("active");
-    captureBtn.disabled = false;
-    injectBtn.disabled = false;
   } else {
     siteStatusEl.textContent = "Open ChatGPT, Claude, or Gemini to use this.";
     siteStatusEl.classList.remove("active");
-    captureBtn.disabled = true;
-    injectBtn.disabled = true;
   }
+  captureBtn.disabled = !siteSupported;
+  injectBtn.disabled = !siteSupported;
 }
 
 chrome.tabs.onActivated.addListener(refreshActiveTab);
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-  if (tabId === activeTabId && changeInfo.status === "complete") refreshActiveTab();
+  // status "complete" = full load; changeInfo.url = SPA navigation to another chat
+  if (tabId === activeTabId && (changeInfo.status === "complete" || changeInfo.url)) {
+    refreshActiveTab();
+  }
 });
 chrome.windows.onFocusChanged.addListener((windowId) => {
   if (windowId !== chrome.windows.WINDOW_ID_NONE) refreshActiveTab();
 });
+
+// ---- Send to tab, injecting content.js first so extension reloads pick up fixes.
+const NO_RECEIVER = /Receiving end does not exist|Could not establish connection/i;
+
+async function sendToTab(tabId, message) {
+  await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+  await new Promise((r) => setTimeout(r, 100));
+  try {
+    return await chrome.tabs.sendMessage(tabId, message);
+  } catch (err) {
+    if (!NO_RECEIVER.test(String(err && err.message))) throw err;
+    await new Promise((r) => setTimeout(r, 200));
+    return await chrome.tabs.sendMessage(tabId, message);
+  }
+}
+
+function friendlyTabError(e) {
+  const m = String((e && e.message) || e);
+  if (/Cannot access|cannot be scripted|extensions gallery/i.test(m)) {
+    return "SYNAPSE can't run on this page. Open a ChatGPT, Claude or Gemini chat.";
+  }
+  return `Could not reach the page: ${m}`;
+}
 
 // ---- Auth ---------------------------------------------------------------
 async function refreshAuthUI() {
@@ -188,7 +227,9 @@ async function loadPendingPrompt() {
 }
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== "local" || !changes.pendingPrompt?.newValue || promptTextEl.value.trim()) return;
+  if (areaName !== "local") return;
+  if (changes.authToken) refreshAuthUI();
+  if (!changes.pendingPrompt?.newValue || promptTextEl.value.trim()) return;
   promptTextEl.value = changes.pendingPrompt.newValue;
   setMsg(injectMsgEl, "Prompt received from Synapse webapp.", true);
 });
@@ -197,66 +238,89 @@ logoutBtn.addEventListener("click", async () => {
   await chrome.storage.local.remove(["authToken", "userEmail"]);
   setMsg(authMsgEl, "Logged out.", true);
   await refreshAuthUI();
+  await refreshChatList();
 });
 
-registerBtn.addEventListener("click", async () => {
+async function authenticate(path, successText) {
   const email = emailInputEl.value.trim();
   const password = passwordInputEl.value;
   if (!email || !password) {
     setMsg(authMsgEl, "Enter an email and password.", false);
     return;
   }
+  setMsg(authMsgEl, "Contacting server…", true, true);
   try {
-    const data = await apiRequest("/auth/register", {
+    const data = await apiRequest(path, {
       method: "POST",
       body: JSON.stringify({ email, password }),
+      noAuth: true,
     });
     await chrome.storage.local.set({ authToken: data.access_token, userEmail: email });
-    setMsg(authMsgEl, "Registered and logged in.", true);
+    passwordInputEl.value = "";
+    setMsg(authMsgEl, successText, true);
     await refreshAuthUI();
     await refreshChatList();
   } catch (error) {
     setMsg(authMsgEl, error.message, false);
   }
-});
-
-loginBtn.addEventListener("click", async () => {
-  const email = emailInputEl.value.trim();
-  const password = passwordInputEl.value;
-  if (!email || !password) {
-    setMsg(authMsgEl, "Enter an email and password.", false);
-    return;
-  }
-  try {
-    const data = await apiRequest("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    });
-    await chrome.storage.local.set({ authToken: data.access_token, userEmail: email });
-    setMsg(authMsgEl, "Logged in.", true);
-    await refreshAuthUI();
-    await refreshChatList();
-  } catch (error) {
-    setMsg(authMsgEl, error.message, false);
-  }
-});
+}
+registerBtn.addEventListener("click", () => authenticate("/auth/register", "Registered and logged in."));
+loginBtn.addEventListener("click", () => authenticate("/auth/login", "Logged in."));
 
 // ---- Capture / Inject ----------------------------------------------------
 captureBtn.addEventListener("click", async () => {
   if (!activeTabId) return;
+
+  if (!(await getAuthToken())) {
+    setMsg(captureMsgEl, "Please log in first (Account section above), then capture again.", false);
+    return;
+  }
+
   captureBtn.disabled = true;
+  setMsg(captureMsgEl, "Capturing… long chats take a while because every message is loaded first.", true, true);
   try {
-    const res = await chrome.tabs.sendMessage(activeTabId, { type: "CAPTURE_CHAT" });
+    let res = await sendToTab(activeTabId, { type: "CAPTURE_CHAT_V2" });
+
+    if (res && res.duplicate) {
+      const ex = res.existing || {};
+      const when = ex.captured_at ? new Date(ex.captured_at).toLocaleString() : "earlier";
+      const replace = confirm(
+        `This conversation is already archived (${ex.messageCount ?? "?"} messages, saved ${when}).\n\n` +
+          "OK = replace the old copy with this new capture.\nCancel = don't replace."
+      );
+      if (replace) {
+        res = await sendToTab(activeTabId, { type: "CAPTURE_CHAT_V2", mode: "replace", reuse: true });
+      } else if (confirm("Save it as an additional copy instead?")) {
+        res = await sendToTab(activeTabId, { type: "CAPTURE_CHAT_V2", mode: "duplicate", reuse: true });
+      } else {
+        setMsg(captureMsgEl, "Not saved (already archived).", true);
+        return;
+      }
+    }
+
     if (res && res.ok) {
-      setMsg(captureMsgEl, `Captured ${res.count} messages.`, true);
+      const extra = res.replaced ? " (replaced the previous copy)" : "";
+      setMsg(captureMsgEl, `Captured ${res.count} messages${extra}.`, true);
       await refreshChatList();
+    } else if (res && res.code === "AUTH") {
+      await refreshAuthUI();
+      setMsg(captureMsgEl, res.error || "Please log in again.", false);
     } else {
-      setMsg(captureMsgEl, res?.error || "Capture failed.", false);
+      if (res && res.diagnostics) {
+        console.warn("[SYNAPSE side panel] capture diagnostics:", res.diagnostics);
+      }
+      let detail = "";
+      if (res && res.diagnostics) {
+        const d = res.diagnostics;
+        detail = ` Selector: ${d.winningSelector || "none"}. Roles: ${JSON.stringify(d.roles || {})}. Text: ${JSON.stringify(d.text || {})}.`;
+      }
+      setMsg(captureMsgEl, (res?.error || "Capture failed.") + detail, false);
     }
   } catch (e) {
-    setMsg(captureMsgEl, "Could not reach page. Reload the tab and try again.", false);
+    setMsg(captureMsgEl, friendlyTabError(e), false);
+  } finally {
+    captureBtn.disabled = !siteSupported;
   }
-  captureBtn.disabled = siteSupported ? false : true;
 });
 
 injectBtn.addEventListener("click", async () => {
@@ -275,7 +339,7 @@ injectBtn.addEventListener("click", async () => {
           method: "POST",
           body: JSON.stringify({ query: text, limit: 5 }),
         });
-        if (contextResponse.context) {
+        if (contextResponse && contextResponse.context) {
           prompt = `${contextResponse.context}\n\nUse this context only when relevant.\n\nUser request:\n${text}`;
         }
       } catch (error) {
@@ -283,7 +347,7 @@ injectBtn.addEventListener("click", async () => {
       }
     }
 
-    const res = await chrome.tabs.sendMessage(activeTabId, {
+    const res = await sendToTab(activeTabId, {
       type: "INJECT_PROMPT",
       text: prompt,
       autoSubmit: autoSubmitEl.checked,
@@ -296,65 +360,72 @@ injectBtn.addEventListener("click", async () => {
       setMsg(injectMsgEl, res?.error || "Injection failed.", false);
     }
   } catch (e) {
-    setMsg(injectMsgEl, "Could not reach page. Reload the tab and try again.", false);
+    setMsg(injectMsgEl, friendlyTabError(e), false);
+  } finally {
+    injectBtn.disabled = !siteSupported;
   }
-  injectBtn.disabled = siteSupported ? false : true;
 });
 
-// ---- Chat list ------------------------------------------------------------
+// ---- Chat list (DOM built with textContent; no innerHTML with page data) ------
+function emptyState(text) {
+  const d = h("div", "", text);
+  d.id = "emptyState";
+  return d;
+}
+
+function safeOpen(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol === "https:" || u.protocol === "http:") chrome.tabs.create({ url: u.href });
+  } catch (_) {}
+}
+
+function buildChatItem(c) {
+  const div = h("div", "chatItem");
+  const date = c.captured_at ? new Date(c.captured_at).toLocaleString() : "";
+  const n = Array.isArray(c.messages) ? c.messages.length : 0;
+  div.appendChild(h("div", "site", c.site || ""));
+  div.appendChild(h("div", "meta", `${n} msgs \u00b7 ${date}`));
+  div.appendChild(h("div", "meta", c.title || c.url || ""));
+
+  const actions = h("div", "actions");
+  const openBtn = h("button", "", "Open");
+  openBtn.addEventListener("click", () => c.url && safeOpen(c.url));
+  const delBtn = h("button", "", "Delete");
+  delBtn.addEventListener("click", async () => {
+    try {
+      await apiRequest(`/chats/${encodeURIComponent(c.id)}`, { method: "DELETE" });
+      await refreshChatList();
+    } catch (error) {
+      if (error.code === "AUTH") await refreshAuthUI();
+      setMsg(captureMsgEl, error.message, false);
+    }
+  });
+  actions.append(openBtn, delBtn);
+  div.appendChild(actions);
+  return div;
+}
+
 async function refreshChatList() {
+  chatListEl.textContent = "";
+  if (!(await getAuthToken())) {
+    chatCountEl.textContent = "0";
+    chatListEl.appendChild(emptyState("Log in to see your archived chats."));
+    return;
+  }
   try {
     const chats = await apiRequest("/chats");
     chatCountEl.textContent = chats.length;
-    chatListEl.innerHTML = "";
     if (chats.length === 0) {
-      chatListEl.innerHTML = '<div id="emptyState">No captures yet.</div>';
+      chatListEl.appendChild(emptyState("No captures yet."));
       return;
     }
-    chats
-      .slice()
-      .reverse()
-      .forEach((c) => {
-        const div = document.createElement("div");
-        div.className = "chatItem";
-        const date = new Date(c.captured_at).toLocaleString();
-        div.innerHTML = `
-          <div class="site">${escapeHtml(c.site)}</div>
-          <div class="meta">${c.messages.length} msgs \u00b7 ${date}</div>
-          <div class="meta">${escapeHtml(c.title || c.url)}</div>
-          <div class="actions">
-            <button data-action="open" data-url="${escapeHtml(c.url || "")}">Open</button>
-            <button data-action="delete" data-id="${c.id}">Delete</button>
-          </div>
-        `;
-        chatListEl.appendChild(div);
-      });
-
-    chatListEl.querySelectorAll("button[data-action='open']").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        if (btn.dataset.url) chrome.tabs.create({ url: btn.dataset.url });
-      });
-    });
-    chatListEl.querySelectorAll("button[data-action='delete']").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        try {
-          await apiRequest(`/chats/${btn.dataset.id}`, { method: "DELETE" });
-          await refreshChatList();
-        } catch (error) {
-          setMsg(captureMsgEl, error.message, false);
-        }
-      });
-    });
+    chats.slice().reverse().forEach((c) => chatListEl.appendChild(buildChatItem(c)));
   } catch (error) {
     chatCountEl.textContent = "0";
-    chatListEl.innerHTML = `<div id="emptyState">${escapeHtml(error.message)}</div>`;
+    if (error.code === "AUTH") await refreshAuthUI();
+    chatListEl.appendChild(emptyState(error.message));
   }
-}
-
-function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str ?? "";
-  return div.innerHTML;
 }
 
 exportBtn.addEventListener("click", async () => {
@@ -366,7 +437,7 @@ exportBtn.addEventListener("click", async () => {
     a.href = url;
     a.download = `chat-archive-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   } catch (error) {
     setMsg(captureMsgEl, error.message, false);
   }
@@ -377,10 +448,11 @@ clearBtn.addEventListener("click", async () => {
   try {
     const chats = await apiRequest("/chats");
     for (const chat of chats) {
-      await apiRequest(`/chats/${chat.id}`, { method: "DELETE" });
+      await apiRequest(`/chats/${encodeURIComponent(chat.id)}`, { method: "DELETE" });
     }
     await refreshChatList();
   } catch (error) {
+    if (error.code === "AUTH") await refreshAuthUI();
     setMsg(captureMsgEl, error.message, false);
   }
 });

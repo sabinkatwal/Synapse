@@ -1,6 +1,5 @@
 // SYNAPSE - background service worker
-
-const API_BASE = "https://synapse-wqm8.onrender.com";
+importScripts("api.js");
 
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.get("archivedChats").then(({ archivedChats }) => {
@@ -8,74 +7,116 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-// IMPORTANT: this must be false. The toolbar icon opens popup.html (see
-// manifest.json's action.default_popup) — the side panel is opened on
-// demand from a button inside the popup via chrome.sidePanel.open().
-// A previous version of this file set this to `true`, and Chrome persists
-// that preference per-extension; simply removing the call later does NOT
-// clear the stored value. Setting it to `false` here explicitly overwrites
-// that leftover state so the toolbar icon reliably opens the popup again.
+// IMPORTANT: this must stay false. The toolbar icon opens popup.html; the side
+// panel is opened on demand from a button inside the popup via
+// chrome.sidePanel.open(). Chrome persists this preference per extension, so we
+// set it explicitly on every service-worker start.
 chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: false })
   .catch((err) => console.error("[SYNAPSE background] setPanelBehavior failed:", err));
 
-// Handles network requests to the local archive server on behalf of
-// content scripts. Content scripts inherit the page's security context
-// (e.g. https://claude.ai), so fetching the API from them
-// can be blocked as mixed content. The service worker runs in the
-// extension's own context (chrome-extension://...) and is not subject
-// to that restriction.
-async function saveChatToServer(payload) {
+// ---- helpers --------------------------------------------------------------
+function normalizeUrl(u) {
+  try {
+    const url = new URL(u);
+    return `${url.origin}${url.pathname.replace(/\/+$/, "")}`; // drop query + hash
+  } catch {
+    return String(u || "");
+  }
+}
+
+function notifyWaking(waking) {
+  // Goes to extension pages (the side panel). Ignore "no receiver" errors.
+  try {
+    chrome.runtime.sendMessage({ type: "SERVER_WAKING", waking }).catch(() => {});
+  } catch (_) {}
+}
+const apiHooks = {
+  onWaking: () => notifyWaking(true),
+  onAwake: () => notifyWaking(false),
+};
+
+// ---- save (network calls live here, not in the content script) -------------
+// mode: "check"     -> if this URL is already archived, return {duplicate:true}
+//       "replace"   -> save the new capture, then delete the old copy/copies
+//       "duplicate" -> save anyway as an additional copy
+// The API has no update endpoint, so "replace" = POST new, then DELETE old
+// (in that order, so a failed POST never loses the existing copy).
+async function saveChatToServer(payload, mode = "check") {
   const { authToken } = await chrome.storage.local.get("authToken");
   if (!authToken) {
-    return { ok: false, error: "Please log in first from the extension popup." };
-  }
-
-  let response;
-  try {
-    response = await fetch(`${API_BASE}/chats`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authToken}`,
-      },
-      body: JSON.stringify(payload),
-    });
-  } catch (err) {
-    console.error("[SYNAPSE background] fetch failed:", err);
     return {
       ok: false,
-      error: `Could not reach the archive server at ${API_BASE}. Is it running?`,
+      code: "AUTH",
+      error: "You are not logged in. Open the SYNAPSE side panel and log in first.",
     };
   }
 
-  if (!response.ok) {
-    let errorData;
-    try {
-      errorData = await response.text();
-    } catch {
-      errorData = `Server returned ${response.status}`;
-    }
-    return { ok: false, error: errorData || "Failed to save chat." };
-  }
+  try {
+    const key = normalizeUrl(payload.url);
+    const all = await synapseFetch("/chats", {}, apiHooks);
+    const existing = (Array.isArray(all) ? all : []).filter(
+      (c) => normalizeUrl(c.url) === key
+    );
 
-  return { ok: true };
+    if (existing.length && mode === "check") {
+      const e = existing[0];
+      return {
+        ok: false,
+        duplicate: true,
+        existing: {
+          id: e.id,
+          title: e.title,
+          captured_at: e.captured_at,
+          messageCount: Array.isArray(e.messages) ? e.messages.length : undefined,
+        },
+        error: "This conversation is already archived.",
+      };
+    }
+
+    await synapseFetch(
+      "/chats",
+      { method: "POST", body: JSON.stringify(payload) },
+      apiHooks
+    );
+
+    let replaced = 0;
+    if (mode === "replace") {
+      for (const old of existing) {
+        try {
+          await synapseFetch(`/chats/${old.id}`, { method: "DELETE" }, apiHooks);
+          replaced++;
+        } catch (err) {
+          console.warn("[SYNAPSE background] could not delete old copy", old.id, err);
+        }
+      }
+    }
+    return { ok: true, replaced };
+  } catch (err) {
+    console.error("[SYNAPSE background] save failed:", err);
+    return {
+      ok: false,
+      code: err.code || "ERROR",
+      error: err.message || "Failed to save chat.",
+    };
+  }
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === "SAVE_CHAT") {
-    saveChatToServer(msg.payload)
+  if (msg && msg.type === "SAVE_CHAT") {
+    saveChatToServer(msg.payload, msg.mode)
       .then(sendResponse)
       .catch((err) => {
         console.error("[SYNAPSE background] Unhandled error:", err);
         sendResponse({ ok: false, error: String(err) });
       });
-    return true; // keep the message channel open for async sendResponse
+    return true; // keep the channel open for async sendResponse
   }
 });
 
+// ---- messages from the SYNAPSE web app --------------------------------------
 chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
-  if (msg.type !== "PUSH_PROMPT_TO_ACTIVE_AI") return;
+  if (!msg || msg.type !== "PUSH_PROMPT_TO_ACTIVE_AI") return;
 
   storePushedPrompt(msg.text)
     .then(sendResponse)
@@ -90,7 +131,6 @@ async function storePushedPrompt(text) {
   if (!text || typeof text !== "string") {
     return { ok: false, error: "Prompt is empty." };
   }
-
   await chrome.storage.local.set({
     pendingPrompt: text,
     pendingPromptUpdatedAt: new Date().toISOString(),

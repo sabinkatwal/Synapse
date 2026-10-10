@@ -4,9 +4,18 @@
     <meta charset="utf-8" />
     <title>Synapse</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <style>
+      body { margin: 0; padding: 14px; width: 220px; font: 13px system-ui, sans-serif; background: #0f1115; color: #e8eaf0; }
+      h1 { font-size: 15px; margin: 0 0 10px; }
+      button { width: 100%; padding: 9px 10px; border: 0; border-radius: 8px; background: #6c5ce7; color: #fff; font-size: 13px; cursor: pointer; }
+      button:hover { background: #5b4bd6; }
+      #msg { margin-top: 8px; min-height: 16px; font-size: 12px; color: #ff8a8a; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script src="dist/popup.js"></script>
+    <h1>⚡ Synapse</h1>
+    <button id="openPanel">Open side panel</button>
+    <div id="msg"></div>
+    <script src="popup.js"></script>
   </body>
 </html>
