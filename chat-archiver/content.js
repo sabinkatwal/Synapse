@@ -1,13 +1,18 @@
 // SYNAPSE Web Archiver - content script
 // Runs (top frame only) on chatgpt.com, chat.openai.com, claude.ai, gemini.google.com.
 // Message types (unchanged): CAPTURE_CHAT, INJECT_PROMPT, PING.
-// Network calls are delegated to the background worker (SAVE_CHAT).
+// Network calls to the SYNAPSE backend are delegated to the background worker (SAVE_CHAT).
+//
+// ChatGPT capture order:
+//   1) fetchChatGPTConversation(): reads the whole chat from ChatGPT's own
+//      conversation data (no scrolling, no selectors).
+//   2) If that fails for any reason, falls back to the DOM scroll-and-read path.
 
 (function () {
   "use strict";
   if (window !== window.top) return;
 
-  const SCRIPT_VERSION = "2026-10-10-chatgpt-capture-v9";
+  const SCRIPT_VERSION = "2026-10-10-chatgpt-capture-v10";
 
   // Guard against double injection (manifest + chrome.scripting retry). If the
   // page still has an older copy after the unpacked extension is reloaded, allow
@@ -428,7 +433,7 @@
     return d;
   }
   window.__synapseDiagnose = diagnostics; // run from DevTools with the extension context selected
-  window.__synapseHarvest = harvest;      // DevTools: see exactly what would be captured right now
+  window.__synapseHarvest = harvest;      // DevTools: see exactly what the DOM path would capture right now
 
   // ---- progress to the side panel -------------------------------------------------
   let lastProgress = 0;
@@ -515,8 +520,92 @@
 
   function assertSame(startId) {
     const now = cfg.site === "chatgpt" ? convoId() : location.pathname;
-    if (now !== startId) throw new Error("You switched conversations during capture. Nothing was saved. Try again.");
+    if (now !== startId) {
+      const err = new Error("You switched conversations during capture. Nothing was saved. Try again.");
+      err.switched = true;
+      throw err;
+    }
   }
+
+  // ---- ChatGPT: read the conversation from its own data (no scrolling) -------------------
+  // ChatGPT stores a chat as a tree of nodes (`mapping`). `current_node` is the
+  // last message of the branch you are looking at; walking `parent` links back to
+  // the root and reversing gives the messages in order.
+  //
+  // NOTE: this is an undocumented internal endpoint. If it changes or fails for
+  // any reason, saveCapture() falls back to the DOM scroll path below.
+
+  function cleanChatGPTText(t) {
+    let s = String(t || "");
+    // Entity markers: keep the display name, drop the rest.
+    s = s.replace(/\uE200entity\uE202(\[[\s\S]*?\])\uE201/g, (_, json) => {
+      try { const a = JSON.parse(json); return typeof a[1] === "string" ? a[1] : ""; } catch (_) { return ""; }
+    });
+    // Citation / other private-use markers.
+    s = s.replace(/\uE200[^\uE201]*\uE201/g, "").replace(/[\uE000-\uF8FF]/g, "");
+    return cfg.postProcess ? cfg.postProcess(s) : s.trim();
+  }
+
+  function parseChatGPTMapping(data) {
+    const map = data && data.mapping;
+    if (!map || typeof map !== "object") throw new Error("unexpected response shape (no mapping)");
+    if (!data.current_node || !map[data.current_node]) throw new Error("unexpected response shape (no current_node)");
+
+    const chain = [];
+    const seen = new Set();
+    for (let id = data.current_node; id && map[id] && !seen.has(id); id = map[id].parent) {
+      seen.add(id);
+      chain.push(map[id]);
+    }
+    chain.reverse();
+
+    const items = [];
+    for (const node of chain) {
+      const m = node.message;
+      if (!m) continue;
+      const role = m.author && m.author.role;
+      if (role !== "user" && role !== "assistant") continue;
+      if (m.metadata && m.metadata.is_visually_hidden_from_conversation) continue;
+      if (role === "assistant" && m.recipient && m.recipient !== "all") continue; // tool calls
+      const c = m.content;
+      if (!c || (c.content_type !== "text" && c.content_type !== "multimodal_text")) continue;
+      const text = cleanChatGPTText((c.parts || []).filter((p) => typeof p === "string").join("\n\n"));
+      if (!text) continue;
+      items.push({ key: m.id || node.id, role, text });
+    }
+    return items;
+  }
+
+  async function fetchChatGPTConversation(id) {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 20000);
+    try {
+      const sres = await fetch("/api/auth/session", { credentials: "include", signal: ctl.signal });
+      if (!sres.ok) throw new Error(`session request failed (${sres.status})`);
+      const session = await sres.json();
+      const token = session && session.accessToken;
+      if (!token) throw new Error("no access token (are you logged in?)");
+
+      // The token stays in memory only. It is never logged or sent anywhere else.
+      const headers = { Authorization: `Bearer ${token}` };
+      const did = (document.cookie.match(/(?:^|;\s*)oai-did=([^;]+)/) || [])[1];
+      if (did) headers["oai-device-id"] = decodeURIComponent(did);
+
+      const res = await fetch(`/backend-api/conversation/${encodeURIComponent(id)}`, {
+        credentials: "include",
+        headers,
+        signal: ctl.signal,
+      });
+      if (!res.ok) throw new Error(`conversation request failed (${res.status})`);
+      const data = await res.json();
+      if (data.conversation_id && data.conversation_id !== id) throw new Error("conversation id mismatch");
+      return { title: data.title || null, items: parseChatGPTMapping(data) };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  // DevTools (SYNAPSE context): __synapseApi().then(r => console.log(r.title, r.items.length))
+  window.__synapseApi = () => fetchChatGPTConversation(convoId());
 
   // ---- expand collapsed messages ("Show more") --------------------------------------------
   function expandCollapsed() {
@@ -530,7 +619,7 @@
     return clicked;
   }
 
-  // ---- load the whole conversation ------------------------------------------------------
+  // ---- load the whole conversation by scrolling (DOM path / fallback) -----------------------
   // Picks the scrollable ancestor with the LARGEST scroll range (the real chat
   // scroller), not merely the nearest one, which can be a small inner element.
   function findScrollContainer(startEl) {
@@ -610,9 +699,58 @@
     }
   }
 
+  // ---- gather the conversation (API first for ChatGPT, DOM otherwise) ---------------------------
+  // Returns { items, title, method } or { fail: "message for the popup" }.
+  async function gatherConversation() {
+    if (cfg.site === "chatgpt") {
+      const id = convoId();
+      if (!id) {
+        return { fail: "Capture stopped: this page has no /c/<id> in the URL, so it isn't a saved conversation." };
+      }
+      progress("Waiting for the response to finish…", true);
+      await waitForIdle();
+      try {
+        progress("Reading conversation from ChatGPT…", true);
+        const api = await fetchChatGPTConversation(id);
+        assertSame(id); // you may have switched chats while the request ran
+        if (api.items.length) {
+          return { items: api.items, title: api.title || document.title, method: "api" };
+        }
+        console.warn(LOG, "ChatGPT data returned no messages; falling back to page scan.");
+      } catch (err) {
+        if (err && err.switched) throw err;
+        console.warn(LOG, "ChatGPT data capture failed; falling back to page scan:", err);
+      }
+    }
+
+    // DOM path (scrolling). Verify the header first so one chat can't be saved
+    // under another chat's title.
+    progress("Checking conversation…", true);
+    const head = await waitForHeaderMatch(6000);
+    if (!head.ok) {
+      return { fail: `Capture stopped: ${head.reason}. Wait for the chat to finish loading and try again.` };
+    }
+    const startId = head.id;
+    if (head.verified === false) console.warn(LOG, "Sidebar title not found; verified by URL id only.");
+
+    if (cfg.site !== "chatgpt") {
+      progress("Waiting for the response to finish…", true);
+      await waitForIdle();
+    }
+    await waitForTurns(5000);
+    const items = await collectAll(startId);
+
+    // Re-check after the sweep, right before saving.
+    const end = headerCheck();
+    if (!end.ok || end.id !== startId) {
+      return { fail: "The conversation changed while capturing. Nothing was saved. Try again." };
+    }
+    return { items, title: document.title, method: "dom" };
+  }
+
   // ---- capture + save -------------------------------------------------------------------------
   let capturing = false;
-  let lastCapture = null; // cached so "replace" after a duplicate warning needn't re-scroll
+  let lastCapture = null; // cached so "replace" after a duplicate warning needn't re-capture
 
   async function saveCapture(opts) {
     const mode = (opts && opts.mode) || "check";
@@ -620,29 +758,15 @@
     capturing = true;
     try {
       let convo;
+      let method = "cached";
       if (opts && opts.reuse && lastCapture && lastCapture.url === location.href && Date.now() - lastCapture.at < 120000) {
         convo = lastCapture.convo;
+        method = lastCapture.method || "cached";
       } else {
-        progress("Checking conversation…", true);
-        const head = await waitForHeaderMatch(6000);
-        if (!head.ok) {
-          return { ok: false, error: `Capture stopped: ${head.reason}. Wait for the chat to finish loading and try again.` };
-        }
-        const startId = head.id;
-        if (head.verified === false) console.warn(LOG, "Sidebar title not found; verified by URL id only.");
+        const got = await gatherConversation();
+        if (got.fail) return { ok: false, error: got.fail };
 
-        progress("Waiting for the response to finish…", true);
-        await waitForIdle();
-        await waitForTurns(5000);
-        const items = await collectAll(startId);
-
-        // Re-check after the sweep, right before saving.
-        const end = headerCheck();
-        if (!end.ok || end.id !== startId) {
-          return { ok: false, error: "The conversation changed while capturing. Nothing was saved. Try again." };
-        }
-
-        if (!items.length) {
+        if (!got.items.length) {
           const diag = diagnostics();
           console.warn(LOG, `${cfg.label} messages were not found. Selector diagnostics:`, diag);
           return {
@@ -651,16 +775,18 @@
             diagnostics: diag,
           };
         }
+        method = got.method;
         convo = {
           site: cfg.site,
           url: location.href,
-          title: document.title,
+          title: got.title,
           capturedAt: new Date().toISOString(),
-          messages: items.map(({ role, text }) => ({ role, text })),
+          messages: got.items.map(({ role, text }) => ({ role, text })),
         };
-        lastCapture = { url: location.href, at: Date.now(), convo };
+        lastCapture = { url: location.href, at: Date.now(), convo, method };
       }
 
+      console.info(LOG, `captured ${convo.messages.length} messages via ${method}`);
       progress("Saving to SYNAPSE…", true);
       let result;
       try {
@@ -680,7 +806,7 @@
         return { ok: false, error: "The extension was reloaded. Refresh this page and try again." };
       }
       if (!result) return { ok: false, error: "No response from the background worker." };
-      return { ...result, count: convo.messages.length };
+      return { ...result, count: convo.messages.length, method };
     } finally {
       capturing = false;
     }
